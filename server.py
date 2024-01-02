@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 import hashlib
 import hmac
 import os
+import json
+import pika
 
 load_dotenv()
 WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET')
@@ -12,6 +14,13 @@ WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET')
 # Configure logging
 logging.basicConfig(filename='app.log', level=logging.DEBUG,
                     format='%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]')
+
+# Connect to RabbitMQ
+connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
+channel = connection.channel()
+
+# Declare a queue
+channel.queue_declare(queue='twitch_notifications')
 
 app = Flask(__name__)
 CORS(app)
@@ -53,7 +62,12 @@ def twitch_webhook():
         challenge = data['challenge']
         return Response(challenge, content_type='text/plain', status=200)
     elif message_type == 'notification':
-        pass
+        match data['subscription']['type']:
+            case 'stream.online':
+                message = json.dumps({"streamer_name": data['event']['broadcaster_user_name'],
+                                      "type": "live", "started_at": data['event']['started_at']})
+                channel.basic_publish(exchange='', routing_key='twitch_notifications', body=message)
+                app.logger.debug(f"{data['event']['broadcaster_user_name']} is live! Sent message to queue")
 
     return jsonify({'status': 'received'}), 200
 
