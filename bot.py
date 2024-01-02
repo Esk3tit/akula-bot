@@ -33,6 +33,7 @@ async def on_ready():
     print(f'{bot.user.name} has connected to Discord!')
     twitch = await Twitch(client_id, client_secret)
     # Check for live users every couple of seconds
+    print(twitch.app_id, twitch.app_secret)
     stream_live_loop.start(twitch)
 
 bot.run(TOKEN)
