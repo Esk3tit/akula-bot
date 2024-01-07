@@ -1,3 +1,4 @@
+import asyncio
 import os
 
 import discord
@@ -12,7 +13,7 @@ load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 GUILD = os.getenv('DISCORD_GUILD')
 client_secret = os.getenv('TWITCH_CLIENT_SECRET')
-WEBHOOK_URL = "https://145a-67-170-149-50.ngrok-free.app"
+WEBHOOK_URL = "https://3478-67-170-149-50.ngrok-free.app"
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix='!', intents=intents)
@@ -21,17 +22,14 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 client_id = 'lgzs735eq4rb8o04gbpprk7ia3vge1'
 
 
-# @tasks.loop(seconds=10)
-# async def stream_live_loop(twitch):
-#     stream = await twitchAPI.helper.first(twitch.get_streams(user_id=['90492842'], stream_type='live'))
-#
-#     if stream is not None:
-#         await bot.get_channel(1076360774882185268).send('YIPPIE! Akula is live')
-#     else:
-#         await bot.get_channel(1076360774882185268).send('Akula is not GAMING :(')
-
 async def on_stream_online(data: StreamOnlineEvent):
-    await bot.get_channel(1076360774882185268).send(f'YIPPIE! {data.event.broadcaster_user_name} is live')
+    async def send_message():
+        channel = bot.get_channel(1076360774882185268)
+        if channel:
+            await channel.send(f'YIPPIE! {data.event.broadcaster_user_name} is live')
+
+    # Schedule in the discord.py's event loop
+    asyncio.run_coroutine_threadsafe(send_message(), bot.loop)
 
 
 @bot.event
@@ -47,6 +45,10 @@ async def on_ready():
     webhook = EventSubWebhook(WEBHOOK_URL, 8080, twitch)
     await webhook.unsubscribe_all()
     webhook.start()
+    await bot.get_channel(1076360774882185268).send('BOT IS ONLINE')
+    print("Subscribing to notif")
     await webhook.listen_stream_online('90492842', on_stream_online)
+    # await webhook.listen_stream_online('162656602', on_stream_online)
+    print("Subscribed to notif!")
 
 bot.run(TOKEN)
