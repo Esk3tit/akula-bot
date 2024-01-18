@@ -3,27 +3,24 @@ from datetime import datetime
 from discord import ui, Interaction
 
 
-class ConfigButtonView(discord.ui.View):
-    channel = None
-
-    def __init__(self, *, timeout=None):
+class ConfigView(discord.ui.View):
+    def __init__(self, owner_id, embed_author: discord.ClientUser, timeout=None):
+        self.owner_id = owner_id
+        self.embed_author = embed_author
+        self.channel = None
         super().__init__(timeout=timeout)
 
-    @discord.ui.button(label="Configure Bot", style=discord.ButtonStyle.primary, custom_id="configure_bot")
-    async def configure_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        guild_config_modal = GuildConfig()
-        await interaction.response.send_modal(guild_config_modal)
-        self.channel = guild_config_modal.channel.values
-        self.stop()
-
-
-class GuildConfig(ui.Modal, title='Akula Bot Server Configuration'):
-    # channel = ui.ChannelSelect(channel_types=[discord.ChannelType.text],
-    #                            placeholder='Select channel for bot to send notifications to')
-    channel = ui.ChannelSelect(placeholder='Select channel for bot to send notifications to')
-
-    async def on_submit(self, interaction: Interaction) -> None:
-        embed = discord.Embed(title=self.title, description=f'Notifications channel: {self.channel.values}',
+    @discord.ui.select(cls=discord.ui.ChannelSelect, channel_types=[discord.ChannelType.text])
+    async def select_channels(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
+        self.channel = select.values[0]
+        embed = discord.Embed(title='Akula Bot Configuration',
+                              description=f'Notifications channel: {self.channel.name}',
                               timestamp=datetime.now(), color=discord.Color.blue())
-        embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar)
-        await interaction.response.send_message(embed=embed)
+        embed.set_author(name=self.embed_author.name, icon_url=self.embed_author.avatar)
+        return await interaction.response.send_message(
+            f'You selected {self.channel.name} for stream snipe notifications',
+            embed=embed
+        )
+
+    async def interaction_check(self, interaction: Interaction) -> bool:
+        return interaction.user.id == self.owner_id

@@ -10,14 +10,14 @@ from twitchAPI.twitch import Twitch
 from dotenv import load_dotenv
 from twitchAPI.eventsub.webhook import EventSubWebhook
 
-from bot_ui import ConfigButtonView
+from bot_ui import ConfigView
 from models import Base, Guild
 
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 GUILD = os.getenv('DISCORD_GUILD')
 client_secret = os.getenv('TWITCH_CLIENT_SECRET')
-WEBHOOK_URL = 'https://c4cb-67-170-149-50.ngrok-free.app'
+WEBHOOK_URL = 'https://00ae-67-170-149-50.ngrok-free.app'
 postgres_connection_str = os.getenv('POSTGRESQL_URL')
 
 engine = create_engine(postgres_connection_str, echo=True)
@@ -42,18 +42,20 @@ async def on_stream_online(data: StreamOnlineEvent):
 
 @bot.event
 async def on_guild_join(guild):
-    config_button = ConfigButtonView()
-    # Send message to the guild owner
-    owner = guild.owner or await bot.fetch_user(guild.owner_id)
-    if owner:
-        await owner.send("What's up chat! Please configure me.", view=config_button)
-        await config_button.wait()
+    # Send message to first available text channel (top to bottom)
+    # to configure
+    for channel in guild.text_channels:
+        if channel.permissions_for(guild.me).send_messages:
+            config_button = ConfigView(guild.owner.id, bot.user)
+            await channel.send("What's up chat! Please select a channel for streamsnipe notifications",
+                               view=config_button)
+            await config_button.wait()
 
-    new_server = Guild(guild_id=str(guild.id),
-                       notification_channel_id=str(config_button.channel or guild.text_channels[0].id))
-    with Session(engine) as session:
-        session.add(new_server)
-        session.commit()
+            new_server = Guild(guild_id=str(guild.id),
+                               notification_channel_id=str(config_button.channel or guild.text_channels[0].id))
+            with Session(engine) as session:
+                session.add(new_server)
+                session.commit()
 
 
 # @bot.event
