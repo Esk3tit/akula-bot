@@ -19,7 +19,7 @@ class ConfigView(discord.ui.View):
         embed.set_author(name=self.embed_author.name, icon_url=self.embed_author.avatar)
         return await interaction.response.send_message(
             f'You selected {self.channel.name} for stream snipe notifications',
-            embed=embed
+            embed=embed, ephemeral=True
         )
 
     async def interaction_check(self, interaction: Interaction) -> bool:

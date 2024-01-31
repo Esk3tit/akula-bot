@@ -3,6 +3,7 @@ import os
 
 import discord
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from discord.ext import commands
 from twitchAPI.object.eventsub import StreamOnlineEvent
@@ -11,13 +12,13 @@ from dotenv import load_dotenv
 from twitchAPI.eventsub.webhook import EventSubWebhook
 
 from bot_ui import ConfigView
-from models import Base, Guild
+from models import Base, Guild, UserSubscriptions
 
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 GUILD = os.getenv('DISCORD_GUILD')
 client_secret = os.getenv('TWITCH_CLIENT_SECRET')
-WEBHOOK_URL = 'https://00ae-67-170-149-50.ngrok-free.app'
+WEBHOOK_URL = 'https://cf1b-208-82-96-48.ngrok-free.app'
 postgres_connection_str = os.getenv('POSTGRESQL_URL')
 
 engine = create_engine(postgres_connection_str, echo=True)
@@ -58,12 +59,19 @@ async def on_guild_join(guild):
                 session.commit()
 
 
-# @bot.event
-# async def on_guild_remove(guild):
-#     # Send message to the guild owner
-#     owner = guild.owner or await bot.fetch_user(guild.owner_id)
-#     if owner:
-#         await owner.send("Akula bot has left the chat :(")
+@bot.hybrid_command(name='notify', description='Get notified when a streamer goes live!')
+async def notify(ctx):
+    # Add user to user subscription table
+    # Handle duplicate inserts
+    user_sub = UserSubscriptions(user_id=str(ctx.author.id), guild_id=str(ctx.guild.id), streamer_id='90492842')
+    with Session(engine) as session:
+        try:
+            session.add(user_sub)
+            session.commit()
+            await ctx.send(f'{ctx.author.mention} will now be notified of when Akula is live!')
+        except IntegrityError:
+            session.rollback()
+            await ctx.send(f'{ctx.author.mention} you are already subscribed to the streamer!')
 
 
 @bot.event
@@ -87,5 +95,6 @@ async def on_ready():
         result = session.execute(text("SELECT 'Hello World'"))
         print(result.all())
     print("Subscribed to notif!")
+    await bot.tree.sync()
 
 bot.run(TOKEN)
