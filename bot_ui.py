@@ -17,8 +17,9 @@ class ConfigView(discord.ui.View):
                               description=f'Notifications channel: {self.channel.name}',
                               timestamp=datetime.now(), color=discord.Color.blue())
         embed.set_author(name=self.embed_author.name, icon_url=self.embed_author.avatar)
+        self.stop()
         return await interaction.response.send_message(
-            f'You selected {self.channel.name} for stream snipe notifications',
+            f'You selected `#{self.channel.name}` for stream snipe notifications',
             embed=embed, ephemeral=True
         )
 
