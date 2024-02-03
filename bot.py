@@ -59,6 +59,12 @@ async def on_guild_join(guild):
                 session.commit()
 
 
+@bot.event
+async def on_guild_remove(guild):
+    # Remove guild from guilds DB
+    pass
+
+
 @bot.hybrid_command(name='notify', description='Get notified when a streamer goes live!')
 async def notify(ctx):
     # Add user to user subscription table
