@@ -1,5 +1,7 @@
 import asyncio
 import os
+import pprint
+from datetime import datetime
 
 import discord
 from sqlalchemy import create_engine, select, delete
@@ -25,6 +27,8 @@ engine = create_engine(postgres_connection_str, echo=True)
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix='!', intents=intents)
 
+pp = pprint.PrettyPrinter(indent=4)
+
 # Twitch stuff
 client_id = 'lgzs735eq4rb8o04gbpprk7ia3vge1'
 
@@ -32,13 +36,45 @@ Base.metadata.create_all(engine)
 
 
 async def on_stream_online(data: StreamOnlineEvent):
-    async def send_message():
-        channel = bot.get_channel(1076360774882185268)
-        if channel:
-            await channel.send(f'YIPPIE! {data.event.broadcaster_user_name} is live')
+    embed = discord.Embed(
+        color=discord.Color.dark_gold(),
+        description=f'You have been drafted to stream snipe {data.event.broadcaster_user_name}'
+                    f'Report to your nearest stream sniping channel IMMEDIATELY!'
+                    f'Failure to do so is a felony and is punishable by fines up to $250,000'
+                    f'and/or prison terms up to 30 years. :saluting_face:',
+        title=':rotating_light: MANDATORY STREAM SNIPING DRAFT :rotating_light:',
+        timestamp=datetime.now()
+    )
+    embed.set_author(name=bot.user.name, icon_url=bot.user.avatar)
+    embed.set_thumbnail(
+        url='https://media.istockphoto.com/id/893424506/vector/smiley-saluting-in-army.jpg?s=612x612&w=0&k=20&c=eJfX306BVuNLZFTJGmmO6xP1Hd6Xw3NVyvRkBHi0NsQ=')
+    embed.set_image(url='https://imgur.com/a/s1fEQui')
+
+    embed.add_field(name='Target', value=f'`{data.event.broadcaster_user_name}`')
+    embed.add_field(name='Last Seen', value=f'`{data.event.started_at}`')
+    embed.add_field(name='Link', value=f'`WIP :(`')
+
+    async def send_messages():
+        # Fetch data on all the servers and users we need to notify for this streamer
+        guild_users_map = {}
+        stmt = select(Guild, UserSubscription.user_id).join(Guild.user_subscriptions).join(
+            UserSubscription.streamer).where(Streamer.streamer_id == str(data.event.broadcaster_user_id))
+        with Session(engine) as session:
+            for row in session.execute(stmt).all():
+                if row[0].guild_id not in guild_users_map:
+                    guild_users_map[row[0].guild_id] = {'notif_channel_id': row[0].notification_channel_id,
+                                                        'user_ids': []}
+                guild_users_map[row[0].guild_id]['user_ids'].append(row[1])
+
+        # Iterate through all servers and notify users in each one
+        for guild_id, user_sub_obj in guild_users_map.items():
+            channel = bot.get_channel(int(user_sub_obj['notif_channel_id']))
+            if channel:
+                await channel.send(embed=embed)
+                await channel.send(''.join(f"<@{user_id}>" for user_id in user_sub_obj['user_ids']))
 
     # Schedule in the discord.py's event loop
-    asyncio.run_coroutine_threadsafe(send_message(), bot.loop)
+    asyncio.run_coroutine_threadsafe(send_messages(), bot.loop)
 
 
 @bot.event
@@ -94,6 +130,11 @@ async def notify(ctx):
             await ctx.send(f'{ctx.author.mention} you are already subscribed to the streamer!')
 
 
+@bot.hybrid_command(name='test', description='for testing code when executed')
+async def test(ctx, streamer_id):
+    pass
+
+
 @bot.event
 async def on_ready():
     print(f'{bot.user.name} has connected to Discord!')
@@ -111,5 +152,6 @@ async def on_ready():
     # await webhook.listen_stream_online('162656602', on_stream_online)
     print("Subscribed to notif!")
     await bot.tree.sync()
+
 
 bot.run(TOKEN)
