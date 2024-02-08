@@ -67,7 +67,7 @@ async def on_stream_online(data: StreamOnlineEvent):
                 guild_users_map[row[0].guild_id]['user_ids'].append(row[1])
 
         # Iterate through all servers and notify users in each one
-        for guild_id, user_sub_obj in guild_users_map.items():
+        for user_sub_obj in guild_users_map.values():
             channel = bot.get_channel(int(user_sub_obj['notif_channel_id']))
             if channel:
                 await channel.send(embed=embed)
@@ -102,6 +102,15 @@ async def on_guild_remove(guild):
     # so need to do it with Core/non-Unit of Work pattern
     with Session(engine) as session:
         session.execute(delete(Guild).where(Guild.guild_id == str(guild.id)))
+
+        # Cascade occurs and user subs table should have some entries removed
+        # if it referred to the guild just deleted. See if we need to prune
+        # streamer table as well since we might have deleted all refs to a streamer
+        # in user sub table with cascade
+        stmt = select(Streamer).outerjoin(UserSubscription).where(UserSubscription.streamer_id == None)
+        streamers_to_delete = session.scalars(stmt).all()
+        for streamer in streamers_to_delete:
+            session.delete(streamer)
         session.commit()
 
 
@@ -128,6 +137,28 @@ async def notify(ctx):
         except IntegrityError:
             session.rollback()
             await ctx.send(f'{ctx.author.mention} you are already subscribed to the streamer!')
+
+
+@bot.hybrid_command(name='unnotify', description='Unsubscribe from notification when a streamer goes live!')
+async def unnotify(ctx):
+    with Session(engine) as session:
+        user_sub = session.scalar(select(UserSubscription).where(UserSubscription.user_id == str(ctx.author.id),
+                                                                 UserSubscription.guild_id == str(ctx.guild.id),
+                                                                 UserSubscription.streamer_id == '90492842'))
+        if user_sub:
+            session.delete(user_sub)
+            await ctx.send(f'{ctx.author.mention} you will no longer be notified of when Akula is live!')
+        else:
+            await ctx.send(
+                f'{ctx.author.mention} Unable to unsubscribe from streamer!'
+            )
+
+        # Check if streamer references are still in user subs, remove from streamer table if not
+        streamer_refs = session.scalars(select(UserSubscription).where(UserSubscription.streamer_id == '90492842')).all()
+        if not streamer_refs:
+            session.execute(delete(Streamer).where(Streamer.streamer_id == '90492842'))
+
+        session.commit()
 
 
 @bot.hybrid_command(name='test', description='for testing code when executed')
