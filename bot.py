@@ -4,7 +4,7 @@ import pprint
 from datetime import datetime
 
 import discord
-from sqlalchemy import create_engine, select, delete
+from sqlalchemy import create_engine, select, delete, insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from discord.ext import commands
@@ -114,51 +114,68 @@ async def on_guild_remove(guild):
         session.commit()
 
 
-@bot.hybrid_command(name='notify', description='Get notified when a streamer goes live!')
-async def notify(ctx):
-    # Add user to user subscription table
-    # Handle duplicate inserts
-    user_sub = UserSubscription(user_id=str(ctx.author.id), guild_id=str(ctx.guild.id), streamer_id='90492842')
+@bot.command(name='notify', description='Get notified when a streamer goes live!')
+async def notify(ctx, *streamers):
     with Session(engine) as session:
         # Check if we need to insert streamer into streamer table
         # (if it is first time streamer is ever being watched)
         # Don't need to commit here since we do it in try catch
-        streamer = session.scalar(select(Streamer).where(Streamer.streamer_id == '90492842'))
-        if not streamer:
-            streamer = Streamer(streamer_id='90492842')
-            session.add(streamer)
+        # TODO: function to convert url and streamer name to id should be used here (call on streamers in for expr)
+        for s in streamers:
+            streamer = session.scalar(select(Streamer).where(Streamer.streamer_id == s))
+            if not streamer:
+                streamer = Streamer(streamer_id=s)
+                session.add(streamer)
 
         # If streamer already in streamer table and user runs dupe notify
         # then this try catch block will handle dupe command
         try:
-            session.add(user_sub)
+            session.execute(
+                insert(UserSubscription),
+                [
+                    {"user_id": str(ctx.author.id), "guild_id": str(ctx.guild.id), "streamer_id": s} for s in streamers
+                ]
+            )
             session.commit()
-            await ctx.send(f'{ctx.author.mention} will now be notified of when Akula is live!')
+            await ctx.send(f'{ctx.author.mention} will now be notified of when the streamer(s) are live!')
         except IntegrityError:
             session.rollback()
-            await ctx.send(f'{ctx.author.mention} you are already subscribed to the streamer!')
+            await ctx.send(f'{ctx.author.mention} you are already subscribed to the streamer(s)!')
 
 
-@bot.hybrid_command(name='unnotify', description='Unsubscribe from notification when a streamer goes live!')
-async def unnotify(ctx):
+@bot.command(name='unnotify', description='Unsubscribe from notification when a streamer goes live!')
+async def unnotify(ctx, *streamers):
+    success = []
+    fail = []
     with Session(engine) as session:
-        user_sub = session.scalar(select(UserSubscription).where(UserSubscription.user_id == str(ctx.author.id),
-                                                                 UserSubscription.guild_id == str(ctx.guild.id),
-                                                                 UserSubscription.streamer_id == '90492842'))
-        if user_sub:
-            session.delete(user_sub)
-            await ctx.send(f'{ctx.author.mention} you will no longer be notified of when Akula is live!')
-        else:
-            await ctx.send(
-                f'{ctx.author.mention} Unable to unsubscribe from streamer!'
+        for s in streamers:
+            user_sub = session.scalar(
+                select(UserSubscription).where(
+                    UserSubscription.user_id == str(ctx.author.id),
+                    UserSubscription.guild_id == str(ctx.guild.id),
+                    UserSubscription.streamer_id == s
+                )
             )
+            if user_sub:
+                session.delete(user_sub)
+                success.append(s)
 
-        # Check if streamer references are still in user subs, remove from streamer table if not
-        streamer_refs = session.scalars(select(UserSubscription).where(UserSubscription.streamer_id == '90492842')).all()
-        if not streamer_refs:
-            session.execute(delete(Streamer).where(Streamer.streamer_id == '90492842'))
+                # Check if streamer references are still in user subs, remove from streamer table if not
+                # Can just check for existence of one (first) record, don't need to query all records if
+                # there is at least one record
+                streamer_refs = session.scalars(
+                    select(UserSubscription).where(UserSubscription.streamer_id == s)).first()
+                if not streamer_refs:
+                    session.execute(delete(Streamer).where(Streamer.streamer_id == s))
+            else:
+                fail.append(s)
 
         session.commit()
+
+    if success:
+        await ctx.send(f'{ctx.author.mention} You will no longer be notified for: {", ".join(success)}!')
+    if fail:
+        await ctx.send(f'{ctx.author.mention} Unable to unsubscribe from: {", ".join(fail)}!')
 
 
 @bot.hybrid_command(name='test', description='for testing code when executed')
