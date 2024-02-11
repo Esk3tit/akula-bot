@@ -2,6 +2,7 @@ import asyncio
 import os
 import pprint
 from datetime import datetime
+from urllib.parse import urlparse
 
 import discord
 from sqlalchemy import create_engine, select, delete, insert
@@ -38,9 +39,9 @@ Base.metadata.create_all(engine)
 async def on_stream_online(data: StreamOnlineEvent):
     embed = discord.Embed(
         color=discord.Color.dark_gold(),
-        description=f'You have been drafted to stream snipe {data.event.broadcaster_user_name}'
-                    f'Report to your nearest stream sniping channel IMMEDIATELY!'
-                    f'Failure to do so is a felony and is punishable by fines up to $250,000'
+        description=f'You have been drafted to stream snipe {data.event.broadcaster_user_name}\n\n'
+                    f'Report to your nearest stream sniping channel IMMEDIATELY!\n\n'
+                    f'Failure to do so is a felony and is punishable by fines up to $250,000 '
                     f'and/or prison terms up to 30 years. :saluting_face:',
         title=':rotating_light: MANDATORY STREAM SNIPING DRAFT :rotating_light:',
         timestamp=datetime.now()
@@ -48,7 +49,7 @@ async def on_stream_online(data: StreamOnlineEvent):
     embed.set_author(name=bot.user.name, icon_url=bot.user.avatar)
     embed.set_thumbnail(
         url='https://media.istockphoto.com/id/893424506/vector/smiley-saluting-in-army.jpg?s=612x612&w=0&k=20&c=eJfX306BVuNLZFTJGmmO6xP1Hd6Xw3NVyvRkBHi0NsQ=')
-    embed.set_image(url='https://imgur.com/a/s1fEQui')
+    embed.set_image(url='https://i.imgur.com/beTJRFF.png')
 
     embed.add_field(name='Target', value=f'`{data.event.broadcaster_user_name}`')
     embed.add_field(name='Last Seen', value=f'`{data.event.started_at}`')
@@ -75,6 +76,47 @@ async def on_stream_online(data: StreamOnlineEvent):
 
     # Schedule in the discord.py's event loop
     asyncio.run_coroutine_threadsafe(send_messages(), bot.loop)
+
+
+async def subscribe_all(webhook):
+    """
+    Get all streamers from DB and subscribe to them
+    using the Twitch API webhook (param)
+
+    :return: None
+    """
+    with Session(engine) as session:
+        for s_id in session.scalars(select(Streamer.streamer_id)).all():
+            await webhook.listen_stream_online(s_id, on_stream_online)
+
+
+async def streamer_get_names_from_ids(twitch: Twitch, broadcaster_ids: str | list[str]):
+    channels = await twitch.get_channel_information(broadcaster_ids)
+    return [channel.broadcaster_name for channel in channels]
+
+
+async def streamer_get_ids_from_logins(twitch: Twitch, broadcaster_logins: str | list[str]):
+    return [user.id async for user in twitch.get_users(logins=broadcaster_logins)]
+
+
+async def parse_streamers_from_command(streamers):
+    twitch = await Twitch(client_id, client_secret)
+    res = []
+    need_conversion = []
+    for streamer in streamers:
+        if streamer.isdigit():
+            res.append(streamer)
+        elif urlparse(streamer).scheme:
+            path_segments = urlparse(streamer).path.split('/')
+            streamer_name = path_segments[-1]  # Assuming last segment is the streamer name
+            need_conversion.append(streamer_name)
+        else:
+            need_conversion.append(streamer)
+
+    if need_conversion:
+        res.extend(await streamer_get_ids_from_logins(twitch, need_conversion))
+    await twitch.close()
+    return res
 
 
 @bot.event
@@ -120,8 +162,8 @@ async def notify(ctx, *streamers):
         # Check if we need to insert streamer into streamer table
         # (if it is first time streamer is ever being watched)
         # Don't need to commit here since we do it in try catch
-        # TODO: function to convert url and streamer name to id should be used here (call on streamers in for expr)
-        for s in streamers:
+        clean_streamers = await parse_streamers_from_command(streamers)
+        for s in clean_streamers:
             streamer = session.scalar(select(Streamer).where(Streamer.streamer_id == s))
             if not streamer:
                 streamer = Streamer(streamer_id=s)
@@ -133,14 +175,20 @@ async def notify(ctx, *streamers):
             session.execute(
                 insert(UserSubscription),
                 [
-                    {"user_id": str(ctx.author.id), "guild_id": str(ctx.guild.id), "streamer_id": s} for s in streamers
+                    {
+                        "user_id": str(ctx.author.id),
+                        "guild_id": str(ctx.guild.id),
+                        "streamer_id": s
+                    } for s in clean_streamers
                 ]
             )
             session.commit()
             await ctx.send(f'{ctx.author.mention} will now be notified of when the streamer(s) are live!')
         except IntegrityError:
             session.rollback()
-            await ctx.send(f'{ctx.author.mention} you are already subscribed to the streamer(s)!')
+            await ctx.send(
+                f'{ctx.author.mention} you are already subscribed to some or all of the streamer(s)! Reverting...'
+            )
 
 
 @bot.command(name='unnotify', description='Unsubscribe from notification when a streamer goes live!')
@@ -148,7 +196,7 @@ async def unnotify(ctx, *streamers):
     success = []
     fail = []
     with Session(engine) as session:
-        for s in streamers:
+        for s in await parse_streamers_from_command(streamers):
             user_sub = session.scalar(
                 select(UserSubscription).where(
                     UserSubscription.user_id == str(ctx.author.id),
@@ -196,10 +244,12 @@ async def on_ready():
     webhook.start()
     # await bot.get_channel(1076360774882185268).send('BOT IS ONLINE')
     print("Subscribing to notif")
-    await webhook.listen_stream_online('90492842', on_stream_online)
+    # await webhook.listen_stream_online('90492842', on_stream_online)
     # await webhook.listen_stream_online('162656602', on_stream_online)
+    await subscribe_all(webhook)
     print("Subscribed to notif!")
     await bot.tree.sync()
+    await twitch.close()
 
 
 bot.run(TOKEN)
