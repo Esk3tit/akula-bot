@@ -226,9 +226,9 @@ async def unnotify(ctx, *streamers):
         await ctx.send(f'{ctx.author.mention} Unable to unsubscribe from: {", ".join(fail)}!')
 
 
-@bot.hybrid_command(name='test', description='for testing code when executed')
-async def test(ctx, streamer_id):
-    pass
+# @bot.hybrid_command(name='test', description='for testing code when executed')
+# async def test(ctx, streamer_id):
+#     pass
 
 
 @bot.event
