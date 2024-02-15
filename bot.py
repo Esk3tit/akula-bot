@@ -13,6 +13,7 @@ from twitchAPI.object.eventsub import StreamOnlineEvent
 from twitchAPI.twitch import Twitch
 from dotenv import load_dotenv
 from twitchAPI.eventsub.webhook import EventSubWebhook
+from twitchAPI.type import TwitchAPIException
 
 from bot_ui import ConfigView
 from models import Base, Guild, UserSubscription, Streamer
@@ -96,7 +97,10 @@ async def streamer_get_names_from_ids(twitch: Twitch, broadcaster_ids: str | lis
 
 
 async def streamer_get_ids_from_logins(twitch: Twitch, broadcaster_logins: str | list[str]):
-    return [user.id async for user in twitch.get_users(logins=broadcaster_logins)]
+    try:
+        return [user.id async for user in twitch.get_users(logins=broadcaster_logins)]
+    except TwitchAPIException:
+        return None
 
 
 async def parse_streamers_from_command(streamers):
@@ -114,7 +118,11 @@ async def parse_streamers_from_command(streamers):
             need_conversion.append(streamer)
 
     if need_conversion:
-        res.extend(await streamer_get_ids_from_logins(twitch, need_conversion))
+        ids = await streamer_get_ids_from_logins(twitch, need_conversion)
+        if ids:
+            res.extend(ids)
+        else:
+            res = None
     await twitch.close()
     return res
 
@@ -163,6 +171,8 @@ async def notify(ctx, *streamers):
         # (if it is first time streamer is ever being watched)
         # Don't need to commit here since we do it in try catch
         clean_streamers = await parse_streamers_from_command(streamers)
+        if not clean_streamers:
+            return await ctx.send(f'{ctx.author.mention} Unable to find given streamer, please try again... MAGGOT!')
         for s in clean_streamers:
             streamer = session.scalar(select(Streamer).where(Streamer.streamer_id == s))
             if not streamer:
@@ -196,7 +206,10 @@ async def unnotify(ctx, *streamers):
     success = []
     fail = []
     with Session(engine) as session:
-        for s in await parse_streamers_from_command(streamers):
+        clean_streamers = await parse_streamers_from_command(streamers)
+        if not clean_streamers:
+            return await ctx.send(f'{ctx.author.mention} Unable to find given streamer, please try again... MAGGOT!')
+        for s in clean_streamers:
             user_sub = session.scalar(
                 select(UserSubscription).where(
                     UserSubscription.user_id == str(ctx.author.id),
