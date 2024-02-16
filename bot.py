@@ -18,9 +18,10 @@ from twitchAPI.type import TwitchAPIException
 from bot_ui import ConfigView
 from models import Base, Guild, UserSubscription, Streamer
 
-load_dotenv()
+# Load dotenv if on local env (check for prod only env var)
+if not os.getenv('FLY_APP_NAME'):
+    load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
-GUILD = os.getenv('DISCORD_GUILD')
 client_secret = os.getenv('TWITCH_CLIENT_SECRET')
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 postgres_connection_str = os.getenv('POSTGRESQL_URL')
