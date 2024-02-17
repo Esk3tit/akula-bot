@@ -38,6 +38,11 @@ client_id = 'lgzs735eq4rb8o04gbpprk7ia3vge1'
 Base.metadata.create_all(engine)
 
 
+# Global references
+twitch_obj = None
+webhook_obj = None
+
+
 async def on_stream_online(data: StreamOnlineEvent):
     embed = discord.Embed(
         color=discord.Color.dark_gold(),
@@ -105,7 +110,8 @@ async def streamer_get_ids_from_logins(twitch: Twitch, broadcaster_logins: str |
 
 
 async def parse_streamers_from_command(streamers):
-    twitch = await Twitch(client_id, client_secret)
+    if twitch_obj is None:
+        raise ValueError("Global variable not initialized.")
     res = []
     need_conversion = []
     for streamer in streamers:
@@ -119,12 +125,12 @@ async def parse_streamers_from_command(streamers):
             need_conversion.append(streamer)
 
     if need_conversion:
-        ids = await streamer_get_ids_from_logins(twitch, need_conversion)
+        ids = await streamer_get_ids_from_logins(twitch_obj, need_conversion)
         if ids:
             res.extend(ids)
         else:
             res = None
-    await twitch.close()
+    await twitch_obj.close()
     return res
 
 
@@ -167,6 +173,8 @@ async def on_guild_remove(guild):
 
 @bot.command(name='notify', description='Get notified when a streamer goes live!')
 async def notify(ctx, *streamers):
+    if webhook_obj is None:
+        raise ValueError('Global reference not initialized...')
     with Session(engine) as session:
         # Check if we need to insert streamer into streamer table
         # (if it is first time streamer is ever being watched)
@@ -179,9 +187,7 @@ async def notify(ctx, *streamers):
             if not streamer:
                 streamer = Streamer(streamer_id=s)
                 session.add(streamer)
-                twitch = await Twitch(client_id, client_secret)
-                webhook = EventSubWebhook(WEBHOOK_URL, 8080, twitch)
-                await webhook.listen_stream_online(s, on_stream_online)
+                await webhook_obj.listen_stream_online(s, on_stream_online)
 
         # If streamer already in streamer table and user runs dupe notify
         # then this try catch block will handle dupe command
@@ -252,14 +258,18 @@ async def unnotify(ctx, *streamers):
 async def on_ready():
     print(f'{bot.user.name} has connected to Discord!')
     twitch = await Twitch(client_id, client_secret)
+    global twitch_obj
+    twitch_obj = twitch
     # Set up EventSub webhook
     # port specifies port to run internal backend on for webhook
     # url needs to be a proxy url to this port (ex. ngrok http <port>)
     # so that twitch sends notifs to internal server
     webhook = EventSubWebhook(WEBHOOK_URL, 8080, twitch)
+    global webhook_obj
     webhook.unsubscribe_on_stop = False
     await webhook.unsubscribe_all()
     webhook.start()
+    webhook_obj = webhook
     # await bot.get_channel(1076360774882185268).send('BOT IS ONLINE')
     print("Subscribing to notif")
     # await webhook.listen_stream_online('90492842', on_stream_online)
