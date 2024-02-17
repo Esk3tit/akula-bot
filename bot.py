@@ -179,6 +179,9 @@ async def notify(ctx, *streamers):
             if not streamer:
                 streamer = Streamer(streamer_id=s)
                 session.add(streamer)
+                twitch = await Twitch(client_id, client_secret)
+                webhook = EventSubWebhook(WEBHOOK_URL, 8080, twitch)
+                await webhook.listen_stream_online(s, on_stream_online)
 
         # If streamer already in streamer table and user runs dupe notify
         # then this try catch block will handle dupe command
@@ -254,6 +257,7 @@ async def on_ready():
     # url needs to be a proxy url to this port (ex. ngrok http <port>)
     # so that twitch sends notifs to internal server
     webhook = EventSubWebhook(WEBHOOK_URL, 8080, twitch)
+    webhook.unsubscribe_on_stop = False
     await webhook.unsubscribe_all()
     webhook.start()
     # await bot.get_channel(1076360774882185268).send('BOT IS ONLINE')
@@ -263,7 +267,6 @@ async def on_ready():
     await subscribe_all(webhook)
     print("Subscribed to notif!")
     await bot.tree.sync()
-    await twitch.close()
 
 
 bot.run(TOKEN)
