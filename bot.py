@@ -188,6 +188,7 @@ async def notify(ctx, *streamers):
                 streamer = Streamer(streamer_id=s)
                 session.add(streamer)
                 await webhook_obj.listen_stream_online(s, on_stream_online)
+                session.commit()
 
         # If streamer already in streamer table and user runs dupe notify
         # then this try catch block will handle dupe command
