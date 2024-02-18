@@ -26,7 +26,7 @@ client_secret = os.getenv('TWITCH_CLIENT_SECRET')
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 postgres_connection_str = os.getenv('POSTGRESQL_URL')
 
-engine = create_engine(postgres_connection_str, echo=True)
+engine = create_engine(postgres_connection_str, echo=True, pool_pre_ping=True, pool_recycle=300)
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix='!', intents=intents)
 
