@@ -60,7 +60,7 @@ async def on_stream_online(data: StreamOnlineEvent):
 
     embed.add_field(name='Target', value=f'`{data.event.broadcaster_user_name}`')
     embed.add_field(name='Last Seen', value=f'`{data.event.started_at}`')
-    embed.add_field(name='Link', value=f'`WIP :(`')
+    embed.add_field(name='Link', value=f'`https://www.twitch.tv/{data.event.broadcaster_user_login}`')
 
     async def send_messages():
         # Fetch data on all the servers and users we need to notify for this streamer
