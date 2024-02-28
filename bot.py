@@ -39,8 +39,8 @@ Base.metadata.create_all(engine)
 
 
 # Global references
-twitch_obj = None
-webhook_obj = None
+twitch_obj: Twitch | None = None
+webhook_obj: EventSubWebhook | None = None
 
 
 async def on_stream_online(data: StreamOnlineEvent):
@@ -79,7 +79,7 @@ async def on_stream_online(data: StreamOnlineEvent):
             channel = bot.get_channel(int(user_sub_obj['notif_channel_id']))
             if channel:
                 await channel.send(embed=embed)
-                await channel.send(''.join(f"<@{user_id}>" for user_id in user_sub_obj['user_ids']))
+                await channel.send(' '.join(f"<@{user_id}>" for user_id in user_sub_obj['user_ids']))
 
     # Schedule in the discord.py's event loop
     asyncio.run_coroutine_threadsafe(send_messages(), bot.loop)
@@ -214,6 +214,8 @@ async def notify(ctx, *streamers):
 
 @bot.command(name='unnotify', description='Unsubscribe from notification when a streamer goes live!')
 async def unnotify(ctx, *streamers):
+    if not twitch_obj or not webhook_obj:
+        raise ValueError('Global reference not initialized...')
     success = []
     fail = []
     with Session(engine) as session:
@@ -239,6 +241,16 @@ async def unnotify(ctx, *streamers):
                     select(UserSubscription).where(UserSubscription.streamer_id == s)).first()
                 if not streamer_refs:
                     session.execute(delete(Streamer).where(Streamer.streamer_id == s))
+                    subs = await twitch_obj.get_eventsub_subscriptions(sub_type='stream.online')
+                    # Iterate through all subs and unsub if broadcaster id matches using broadcaster id
+                    async for sub in subs:
+                        if sub.condition.broadcaster_user_id == s:
+                            status = await webhook_obj.unsubscribe_topic(sub.id)
+                            print(f'unsubbed topic {sub.id} from streamer {s}')
+                            if not status:
+                                fail.append(s)
+                            break
+
             else:
                 fail.append(s)
 
