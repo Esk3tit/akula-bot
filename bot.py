@@ -60,7 +60,7 @@ async def on_stream_online(data: StreamOnlineEvent):
 
     embed.add_field(name='Target', value=f'`{data.event.broadcaster_user_name}`')
     embed.add_field(name='Last Seen', value=f'`{data.event.started_at}`')
-    embed.add_field(name='Link', value=f'`https://www.twitch.tv/{data.event.broadcaster_user_login}`')
+    embed.add_field(name='Link', value=f'`Click [Me](https://www.twitch.tv/{data.event.broadcaster_user_login})`')
 
     async def send_messages():
         # Fetch data on all the servers and users we need to notify for this streamer
@@ -260,6 +260,32 @@ async def unnotify(ctx, *streamers):
         await ctx.send(f'{ctx.author.mention} You will no longer be notified for: {", ".join(success)}!')
     if fail:
         await ctx.send(f'{ctx.author.mention} Unable to unsubscribe from: {", ".join(fail)}!')
+
+
+@bot.hybrid_command(name='notifs', description='Get current streamers that you are getting notifications for.')
+async def notifs(ctx):
+    with Session(engine) as session:
+        notified_streamers = session.scalars(
+            select(UserSubscription.streamer_id).where(
+                UserSubscription.user_id == str(ctx.author.id),
+                UserSubscription.guild_id == str(ctx.guild.id)
+            )
+        ).all()
+
+        if notified_streamers:
+            embed = discord.Embed(title="Your Notification Subscriptions",
+                                  description=f"Here are the streamers you're subscribed to in {ctx.guild.name}:",
+                                  color=0x00ff00)
+            subscriptions_text = "\n".join([f"- {streamer_id}" for streamer_id in notified_streamers])
+            if len(subscriptions_text) > 1024:
+                # Handle cases where the text exceeds the field value limit
+                embed.add_field(name="Subscribed Streamers", value="Too many subscriptions to display here!",
+                                inline=False)
+            else:
+                embed.add_field(name="Subscribed Streamers", value=subscriptions_text, inline=False)
+            await ctx.send(embed=embed)
+        else:
+            await ctx.send(f'{ctx.author.mention} You are not receiving notifications in {ctx.guild.name}!')
 
 
 # @bot.hybrid_command(name='test', description='for testing code when executed')
