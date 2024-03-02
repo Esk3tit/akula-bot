@@ -60,7 +60,7 @@ async def on_stream_online(data: StreamOnlineEvent):
 
     embed.add_field(name='Target', value=f'`{data.event.broadcaster_user_name}`')
     embed.add_field(name='Last Seen', value=f'`{data.event.started_at}`')
-    embed.add_field(name='Link', value=f'`Click [Me](https://www.twitch.tv/{data.event.broadcaster_user_login})`')
+    embed.add_field(name='Link', value=f'Click [Me](https://www.twitch.tv/{data.event.broadcaster_user_login})')
 
     async def send_messages():
         # Fetch data on all the servers and users we need to notify for this streamer
@@ -288,14 +288,14 @@ async def notifs(ctx):
             await ctx.send(f'{ctx.author.mention} You are not receiving notifications in {ctx.guild.name}!')
 
 
-@bot.hybrid_command(name='test', description='for testing code when executed')
-async def test(ctx):
-    with Session(engine) as session:
-        streamer_ids = session.scalars(select(Streamer.streamer_id)).all()
-        async for user in twitch_obj.get_users(user_ids=streamer_ids):
-            streamer = session.scalar(select(Streamer))
-            streamer.streamer_name = user.display_name
-        session.commit()
+# @bot.hybrid_command(name='test', description='for testing code when executed')
+# async def test(ctx):
+#     with Session(engine) as session:
+#         streamer_ids = session.scalars(select(Streamer.streamer_id)).all()
+#         async for user in twitch_obj.get_users(user_ids=streamer_ids):
+#             streamer = session.scalar(select(Streamer))
+#             streamer.streamer_name = user.display_name
+#         session.commit()
 
 
 @bot.event
