@@ -93,13 +93,18 @@ async def subscribe_all(webhook):
     :return: None
     """
     with Session(engine) as session:
-        for s_id in session.scalars(select(Streamer.streamer_id)).all():
-            await webhook.listen_stream_online(s_id, on_stream_online)
+        for s in session.scalars(select(Streamer)).all():
+            if s.topic_sub_id:
+                await webhook.unsubscribe_topic(s.topic_sub_id)
+            s.topic_sub_id = await webhook.listen_stream_online(s.streamer_id, on_stream_online)
+        session.commit()
 
 
-async def streamer_get_names_from_ids(twitch: Twitch, broadcaster_ids: str | list[str]):
-    channels = await twitch.get_channel_information(broadcaster_ids)
-    return [channel.broadcaster_name for channel in channels]
+async def streamer_get_names_from_ids(twitch: Twitch, ids: str | list[str]):
+    try:
+        return {user.id: user.display_name async for user in twitch.get_users(user_ids=ids)}
+    except TwitchAPIException:
+        return None
 
 
 async def streamer_get_ids_from_logins(twitch: Twitch, broadcaster_logins: str | list[str]):
@@ -130,7 +135,6 @@ async def parse_streamers_from_command(streamers):
             res.extend(ids)
         else:
             res = None
-    await twitch_obj.close()
     return res
 
 
@@ -180,14 +184,15 @@ async def notify(ctx, *streamers):
         # (if it is first time streamer is ever being watched)
         # Don't need to commit here since we do it in try catch
         clean_streamers = await parse_streamers_from_command(streamers)
-        if not clean_streamers:
+        if clean_streamers is None:
             return await ctx.send(f'{ctx.author.mention} Unable to find given streamer, please try again... MAGGOT!')
+        id_to_name = await streamer_get_names_from_ids(twitch_obj, clean_streamers)
         for s in clean_streamers:
             streamer = session.scalar(select(Streamer).where(Streamer.streamer_id == s))
             if not streamer:
-                streamer = Streamer(streamer_id=s)
-                session.add(streamer)
-                await webhook_obj.listen_stream_online(s, on_stream_online)
+                topic = await webhook_obj.listen_stream_online(s, on_stream_online)
+                new_streamer = Streamer(streamer_id=s, streamer_name=id_to_name[s], topic_sub_id=topic)
+                session.add(new_streamer)
                 session.commit()
 
         # If streamer already in streamer table and user runs dupe notify
@@ -240,17 +245,12 @@ async def unnotify(ctx, *streamers):
                 streamer_refs = session.scalars(
                     select(UserSubscription).where(UserSubscription.streamer_id == s)).first()
                 if not streamer_refs:
+                    streamer = session.scalar(select(Streamer))
+                    status = await webhook_obj.unsubscribe_topic(streamer.topic_sub_id)
+                    print(f'unsubbing topic {streamer.topic_sub_id} from streamer {streamer.streamer_name}')
+                    if not status:
+                        print(f'failed to unsubscribe from streamer through API!!!!')
                     session.execute(delete(Streamer).where(Streamer.streamer_id == s))
-                    subs = await twitch_obj.get_eventsub_subscriptions(sub_type='stream.online')
-                    # Iterate through all subs and unsub if broadcaster id matches using broadcaster id
-                    async for sub in subs:
-                        if sub.condition.broadcaster_user_id == s:
-                            status = await webhook_obj.unsubscribe_topic(sub.id)
-                            print(f'unsubbed topic {sub.id} from streamer {s}')
-                            if not status:
-                                fail.append(s)
-                            break
-
             else:
                 fail.append(s)
 
@@ -288,9 +288,14 @@ async def notifs(ctx):
             await ctx.send(f'{ctx.author.mention} You are not receiving notifications in {ctx.guild.name}!')
 
 
-# @bot.hybrid_command(name='test', description='for testing code when executed')
-# async def test(ctx, streamer_id):
-#     pass
+@bot.hybrid_command(name='test', description='for testing code when executed')
+async def test(ctx):
+    with Session(engine) as session:
+        streamer_ids = session.scalars(select(Streamer.streamer_id)).all()
+        async for user in twitch_obj.get_users(user_ids=streamer_ids):
+            streamer = session.scalar(select(Streamer))
+            streamer.streamer_name = user.display_name
+        session.commit()
 
 
 @bot.event
@@ -311,8 +316,6 @@ async def on_ready():
     webhook_obj = webhook
     # await bot.get_channel(1076360774882185268).send('BOT IS ONLINE')
     print("Subscribing to notif")
-    # await webhook.listen_stream_online('90492842', on_stream_online)
-    # await webhook.listen_stream_online('162656602', on_stream_online)
     await subscribe_all(webhook)
     print("Subscribed to notif!")
     await bot.tree.sync()

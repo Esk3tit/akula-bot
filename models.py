@@ -20,6 +20,8 @@ class Guild(Base):
 class Streamer(Base):
     __tablename__ = 'streamers'
     streamer_id: Mapped[str] = mapped_column(primary_key=True)
+    streamer_name: Mapped[str]
+    topic_sub_id: Mapped[str]
     user_subscriptions: Mapped[List["UserSubscription"]] = relationship(back_populates='streamer')
 
 
