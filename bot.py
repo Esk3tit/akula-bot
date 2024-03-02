@@ -94,8 +94,6 @@ async def subscribe_all(webhook):
     """
     with Session(engine) as session:
         for s in session.scalars(select(Streamer)).all():
-            if s.topic_sub_id:
-                await webhook.unsubscribe_topic(s.topic_sub_id)
             s.topic_sub_id = await webhook.listen_stream_online(s.streamer_id, on_stream_online)
         session.commit()
 
