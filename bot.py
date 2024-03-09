@@ -1,11 +1,11 @@
 import asyncio
 import os
 import pprint
-from datetime import datetime
 from urllib.parse import urlparse
 
 import discord
-from sqlalchemy import create_engine, select, delete, insert
+from discord import app_commands
+from sqlalchemy import create_engine, select, delete, insert, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from discord.ext import commands
@@ -15,7 +15,8 @@ from dotenv import load_dotenv
 from twitchAPI.eventsub.webhook import EventSubWebhook
 from twitchAPI.type import TwitchAPIException
 
-from bot_ui import ConfigView
+from bot_ui import ConfigView, create_streamsnipe_draft_embed, create_config_embed
+from bot_utils import is_owner, get_first_text_channel
 from models import Base, Guild, UserSubscription, Streamer
 
 # Load dotenv if on local env (check for prod only env var)
@@ -37,30 +38,13 @@ client_id = 'lgzs735eq4rb8o04gbpprk7ia3vge1'
 
 Base.metadata.create_all(engine)
 
-
 # Global references
 twitch_obj: Twitch | None = None
 webhook_obj: EventSubWebhook | None = None
 
 
 async def on_stream_online(data: StreamOnlineEvent):
-    embed = discord.Embed(
-        color=discord.Color.dark_gold(),
-        description=f'You have been drafted to stream snipe {data.event.broadcaster_user_name}\n\n'
-                    f'Report to your nearest stream sniping channel IMMEDIATELY!\n\n'
-                    f'Failure to do so is a felony and is punishable by fines up to $250,000 '
-                    f'and/or prison terms up to 30 years. :saluting_face:',
-        title=':rotating_light: MANDATORY STREAM SNIPING DRAFT :rotating_light:',
-        timestamp=datetime.now()
-    )
-    embed.set_author(name=bot.user.name, icon_url=bot.user.avatar)
-    embed.set_thumbnail(
-        url='https://media.istockphoto.com/id/893424506/vector/smiley-saluting-in-army.jpg?s=612x612&w=0&k=20&c=eJfX306BVuNLZFTJGmmO6xP1Hd6Xw3NVyvRkBHi0NsQ=')
-    embed.set_image(url='https://i.imgur.com/beTJRFF.png')
-
-    embed.add_field(name='Target', value=f'`{data.event.broadcaster_user_name}`')
-    embed.add_field(name='Last Seen', value=f'`{data.event.started_at}`')
-    embed.add_field(name='Link', value=f'Click [Me](https://www.twitch.tv/{data.event.broadcaster_user_login})')
+    embed = create_streamsnipe_draft_embed(data, bot.user.name, bot.user.avatar)
 
     async def send_messages():
         # Fetch data on all the servers and users we need to notify for this streamer
@@ -137,22 +121,38 @@ async def parse_streamers_from_command(streamers):
 
 
 @bot.event
-async def on_guild_join(guild):
+async def on_guild_join(guild: discord.Guild):
     # Send message to first available text channel (top to bottom)
-    # to configure
-    for channel in guild.text_channels:
-        if channel.permissions_for(guild.me).send_messages:
-            config_button = ConfigView(guild.owner.id, bot.user)
-            await channel.send("What's up chat! Please select a channel for stream snipe notifications",
-                               view=config_button)
-            await config_button.wait()
+    # to configure, if no permission channel then send DM to owner
+    channel = get_first_text_channel(guild)
+    if channel is None:
+        try:
+            await guild.owner.send("Error: Bot has no channel that it has permission to post in.")
+            print(f"Message sent to the guild owner: {guild.owner}")
+        except discord.HTTPException as e:
+            print(f"Failed to send message to the guild owner: {guild.owner}")
+            print(f"Error: {e}")
+        return
 
-            new_server = Guild(guild_id=str(guild.id),
-                               notification_channel_id=str(config_button.channel.id or guild.text_channels[0].id))
-            with Session(engine) as session:
-                session.add(new_server)
-                session.commit()
-            break
+    config_button = ConfigView(guild.owner.id, bot.user, guild)
+    embed = create_config_embed(
+        'No channel configured yet',
+        'default is Opt-In',
+        bot.user.display_name,
+        bot.user.display_avatar,
+        guild.owner.display_name,
+        guild.owner.display_avatar
+    )
+    await channel.send(embed=embed)
+    await channel.send(view=config_button)
+    await config_button.wait()
+
+    new_server = Guild(guild_id=str(guild.id),
+                       notification_channel_id=str(config_button.channel.id or channel.id),
+                       notification_mode=config_button.notification_mode)
+    with Session(engine) as session:
+        session.add(new_server)
+        session.commit()
 
 
 @bot.event
@@ -180,7 +180,8 @@ async def notify(ctx, *streamers):
     with Session(engine) as session:
         # Check if we need to insert streamer into streamer table
         # (if it is first time streamer is ever being watched)
-        # Don't need to commit here since we do it in try catch
+        # Commit before try catch to avoid foreign key constraint
+        # Needs to exist in streamer table before insert into user sub
         clean_streamers = await parse_streamers_from_command(streamers)
         if clean_streamers is None:
             return await ctx.send(f'{ctx.author.mention} Unable to find given streamer, please try again... MAGGOT!')
@@ -191,7 +192,7 @@ async def notify(ctx, *streamers):
                 topic = await webhook_obj.listen_stream_online(s, on_stream_online)
                 new_streamer = Streamer(streamer_id=s, streamer_name=id_to_name[s], topic_sub_id=topic)
                 session.add(new_streamer)
-                session.commit()
+        session.commit()
 
         # If streamer already in streamer table and user runs dupe notify
         # then this try catch block will handle dupe command
@@ -284,6 +285,41 @@ async def notifs(ctx):
             await ctx.send(embed=embed)
         else:
             await ctx.send(f'{ctx.author.mention} You are not receiving notifications in {ctx.guild.name}!')
+
+
+@bot.hybrid_command(name='changeconfig', description='Change configuration of the bot server-wide.')
+@app_commands.check(is_owner)
+async def changeconfig(ctx):
+    with Session(engine) as session:
+        guild_config = session.scalar(select(Guild).where(Guild.guild_id == str(ctx.guild.id)))
+        embed = create_config_embed(bot.get_channel(int(guild_config.notification_channel_id)).name,
+                                    guild_config.notification_mode,
+                                    bot.user.name,
+                                    bot.user.display_avatar,
+                                    ctx.author.display_name,
+                                    ctx.author.display_avatar)
+        await ctx.send(embed=embed)
+    view = ConfigView(ctx.guild.owner_id, bot.user, ctx.guild)
+    await ctx.send(view=view)
+    await view.wait()
+
+    # Write to DB here after getting values from view
+    channel = get_first_text_channel(ctx.guild)
+    with Session(engine) as session:
+        session.execute(
+            update(Guild).
+            where(Guild.guild_id == str(ctx.guild.id)).
+            values(
+                notification_channel_id=str(view.channel.id or channel.id),
+                notification_mode=view.notification_mode
+            )
+        )
+        session.commit()
+
+
+@changeconfig.error
+async def changeconfig_error(ctx, error):
+    await ctx.send(f"You do not have permission to use this command!, {error}", ephemeral=True)
 
 
 # @bot.hybrid_command(name='test', description='for testing code when executed')

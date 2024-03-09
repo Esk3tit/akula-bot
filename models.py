@@ -15,6 +15,7 @@ class Guild(Base):
     user_subscriptions: Mapped[List["UserSubscription"]] = relationship(back_populates='guild',
                                                                         passive_deletes=True,
                                                                         cascade='all, delete-orphan')
+    notification_mode: Mapped[str]
 
 
 class Streamer(Base):
