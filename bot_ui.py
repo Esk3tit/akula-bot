@@ -96,7 +96,7 @@ class ConfigView(discord.ui.View):
             discord.SelectOption(
                 label='Opt-In',
                 value='optin',
-                description='The user must opt-in to get notifications by using the `!notify` command. Notifications mention users separately.',
+                description='Users must opt-in for notifications with the `!notify` command. Notifications will mention user.',
                 default=True
             ),
             discord.SelectOption(
@@ -108,7 +108,7 @@ class ConfigView(discord.ui.View):
             discord.SelectOption(
                 label='Passive',
                 value='passive',
-                description='The bot will just post the notifications in the designated notification channel without mentioning anyone.',
+                description='The bot will post notifications in the designated notification channel without mentioning anyone.',
                 default=False
             )
         ]
