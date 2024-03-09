@@ -72,6 +72,7 @@ class ConfigView(discord.ui.View):
         self.embed_author = embed_author
         self.guild = guild
         self.channel = None
+        self.message = None
         self.notification_mode = 'optin'
         super().__init__(timeout=timeout)
 
@@ -120,9 +121,6 @@ class ConfigView(discord.ui.View):
     @discord.ui.button(emoji='💾', style=discord.ButtonStyle.primary, label='Save')
     async def save_config(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Disable selects and button
-        self.children[0].disabled = True
-        self.children[1].disabled = True
-        self.children[2].disabled = True
         await self.disable_all_items()
         embed = create_config_confirmation_embed(
             self.channel.name,

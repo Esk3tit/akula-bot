@@ -144,7 +144,7 @@ async def on_guild_join(guild: discord.Guild):
         guild.owner.display_avatar
     )
     await channel.send(embed=embed)
-    await channel.send(view=config_button)
+    config_button.message = await channel.send(view=config_button)
     await config_button.wait()
 
     new_server = Guild(guild_id=str(guild.id),
@@ -300,7 +300,7 @@ async def changeconfig(ctx):
                                     ctx.author.display_avatar)
         await ctx.send(embed=embed)
     view = ConfigView(ctx.guild.owner.id, bot.user, ctx.guild)
-    await ctx.send(view=view)
+    view.message = await ctx.send(view=view)
     await view.wait()
 
     # Write to DB here after getting values from view
