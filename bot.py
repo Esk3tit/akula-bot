@@ -299,7 +299,7 @@ async def changeconfig(ctx):
                                     ctx.author.display_name,
                                     ctx.author.display_avatar)
         await ctx.send(embed=embed)
-    view = ConfigView(ctx.guild.owner_id, bot.user, ctx.guild)
+    view = ConfigView(ctx.guild.owner.id, bot.user, ctx.guild)
     await ctx.send(view=view)
     await view.wait()
 
