@@ -134,4 +134,5 @@ class ConfigView(discord.ui.View):
         self.stop()
 
     async def interaction_check(self, interaction: Interaction) -> bool:
+        print(f'View Level is owner check: {interaction.user.id == self.owner_id}')
         return interaction.user.id == self.owner_id
