@@ -55,15 +55,28 @@ async def on_stream_online(data: StreamOnlineEvent):
             for row in session.execute(stmt).all():
                 if row[0].guild_id not in guild_users_map:
                     guild_users_map[row[0].guild_id] = {'notif_channel_id': row[0].notification_channel_id,
-                                                        'user_ids': []}
+                                                        'user_ids': [],
+                                                        'notif_mode': row[0].notification_mode}
                 guild_users_map[row[0].guild_id]['user_ids'].append(row[1])
 
         # Iterate through all servers and notify users in each one
-        for user_sub_obj in guild_users_map.values():
+        for guild_id, user_sub_obj in guild_users_map.items():
             channel = bot.get_channel(int(user_sub_obj['notif_channel_id']))
             if channel:
                 await channel.send(embed=embed)
-                await channel.send(' '.join(f"<@{user_id}>" for user_id in user_sub_obj['user_ids']))
+
+                # Check notification mode and act accordingly
+                notification_mode = user_sub_obj['notif_mode']
+                if notification_mode == 'global':
+                    guild = bot.get_guild(int(guild_id))
+                    if guild.me.guild_permissions.mention_everyone:
+                        await channel.send('@everyone')
+                    else:
+                        await channel.send(
+                            "The bot doesn't have permission to mention everyone. Mentioning here instead.")
+                        await channel.send('@here')
+                elif notification_mode == 'optin':
+                    await channel.send(' '.join(f"<@{user_id}>" for user_id in user_sub_obj['user_ids']))
 
     # Schedule in the discord.py's event loop
     asyncio.run_coroutine_threadsafe(send_messages(), bot.loop)
