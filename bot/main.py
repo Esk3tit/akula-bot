@@ -15,9 +15,9 @@ from dotenv import load_dotenv
 from twitchAPI.eventsub.webhook import EventSubWebhook
 from twitchAPI.type import TwitchAPIException
 
-from .bot_ui import ConfigView, create_streamsnipe_draft_embed, create_config_embed
-from .bot_utils import is_owner, get_first_text_channel
-from .models import Base, Guild, UserSubscription, Streamer
+from bot.bot_ui import ConfigView, create_streamsnipe_draft_embed, create_config_embed
+from bot.bot_utils import is_owner, get_first_text_channel
+from bot.models import Base, Guild, UserSubscription, Streamer
 
 # Load dotenv if on local env (check for prod only env var)
 if not os.getenv('FLY_APP_NAME'):

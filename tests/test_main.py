@@ -1,7 +1,7 @@
 import pytest
 from twitchAPI.type import TwitchAPIException
 from typing import AsyncGenerator
-from bot.bot import streamer_get_names_from_ids
+from bot.main import streamer_get_names_from_ids
 from twitchAPI.twitch import Twitch
 from twitchAPI.object.api import TwitchUser
 
