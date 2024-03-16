@@ -15,9 +15,9 @@ from dotenv import load_dotenv
 from twitchAPI.eventsub.webhook import EventSubWebhook
 from twitchAPI.type import TwitchAPIException
 
-from bot_ui import ConfigView, create_streamsnipe_draft_embed, create_config_embed
-from bot_utils import is_owner, get_first_text_channel
-from models import Base, Guild, UserSubscription, Streamer
+from .bot_ui import ConfigView, create_streamsnipe_draft_embed, create_config_embed
+from .bot_utils import is_owner, get_first_text_channel
+from .models import Base, Guild, UserSubscription, Streamer
 
 # Load dotenv if on local env (check for prod only env var)
 if not os.getenv('FLY_APP_NAME'):
@@ -368,4 +368,7 @@ async def on_ready():
     await bot.tree.sync()
 
 
-bot.run(TOKEN)
+if __name__ == '__main__':
+    # When pytest imports this file this runs the bot without this check
+    # since when importing the imported file is executed...
+    bot.run(TOKEN)
