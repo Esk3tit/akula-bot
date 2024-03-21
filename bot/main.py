@@ -95,14 +95,14 @@ async def subscribe_all(webhook):
         session.commit()
 
 
-async def streamer_get_names_from_ids(twitch: Twitch, ids: str | list[str]):
+async def streamer_get_names_from_ids(twitch: Twitch, ids: list[str]):
     try:
         return {user.id: user.display_name async for user in twitch.get_users(user_ids=ids)}
     except TwitchAPIException:
         return None
 
 
-async def streamer_get_ids_from_logins(twitch: Twitch, broadcaster_logins: str | list[str]):
+async def streamer_get_ids_from_logins(twitch: Twitch, broadcaster_logins: list[str]):
     try:
         return [user.id async for user in twitch.get_users(logins=broadcaster_logins)]
     except TwitchAPIException:
