@@ -1,6 +1,7 @@
 import asyncio
 import os
 import pprint
+import re
 from urllib.parse import urlparse
 
 import discord
@@ -110,26 +111,31 @@ async def streamer_get_ids_from_logins(twitch: Twitch, broadcaster_logins: list[
 
 
 async def parse_streamers_from_command(streamers):
+    print(streamers)
     if twitch_obj is None:
         raise ValueError("Global variable not initialized.")
     res = []
     need_conversion = []
+    # Robustly match twitch URLs, so that we don't convert streamer names from invalid domains
+    # even if the streamer name there is valid
+    twitch_url_pattern = re.compile(r'^https?://(?:www\.)?twitch\.tv/(\w+)(?:/.*)?$')
     for streamer in streamers:
         if streamer.isdigit():
             res.append(streamer)
-        elif urlparse(streamer).scheme:
-            path_segments = urlparse(streamer).path.split('/')
-            streamer_name = path_segments[-1]  # Assuming last segment is the streamer name
-            need_conversion.append(streamer_name)
         else:
-            need_conversion.append(streamer)
+            url_match = twitch_url_pattern.match(streamer)
+            if url_match:
+                streamer_name = url_match.group(1)
+                need_conversion.append(streamer_name)
+            else:
+                need_conversion.append(streamer)
 
     if need_conversion:
         ids = await streamer_get_ids_from_logins(twitch_obj, need_conversion)
         if ids:
             res.extend(ids)
         else:
-            res = None
+            res = []
     return res
 
 
@@ -196,8 +202,8 @@ async def notify(ctx, *streamers):
         # Commit before try catch to avoid foreign key constraint
         # Needs to exist in streamer table before insert into user sub
         clean_streamers = await parse_streamers_from_command(streamers)
-        if clean_streamers is None:
-            return await ctx.send(f'{ctx.author.mention} Unable to find given streamer, please try again... MAGGOT!')
+        if not clean_streamers:
+            return await ctx.send(f'{ctx.author.mention} Unable to find given streamer(s), please try again... MAGGOT!')
         id_to_name = await streamer_get_names_from_ids(twitch_obj, clean_streamers)
         for s in clean_streamers:
             streamer = session.scalar(select(Streamer).where(Streamer.streamer_id == s))

@@ -1,7 +1,9 @@
+from unittest.mock import AsyncMock
+
 import pytest
 from twitchAPI.type import TwitchAPIException
 from typing import AsyncGenerator
-from bot.main import streamer_get_names_from_ids, streamer_get_ids_from_logins
+from bot.main import streamer_get_names_from_ids, streamer_get_ids_from_logins, parse_streamers_from_command
 from twitchAPI.twitch import Twitch
 from twitchAPI.object.api import TwitchUser
 
@@ -137,3 +139,135 @@ class TestStreamerGetIdsFromLogins:
         # Assert the result
         assert result == ['123456789']
         mock_twitch.get_users.assert_called_once_with(logins=['broadcaster'])
+
+
+class TestParseStreamersFromCommand:
+
+    #  Should return a list of streamer IDs when given a list of streamer IDs
+    @pytest.mark.asyncio
+    async def test_parse_streamers_from_command_with_ids(self, mocker):
+        # Mock the global twitch_obj
+        mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
+
+        streamers = ['123', '456', '789']
+        mock_streamer_get_ids_from_logins = AsyncMock()
+        mocker.patch('bot.main.streamer_get_ids_from_logins', mock_streamer_get_ids_from_logins)
+
+        result = await parse_streamers_from_command(streamers)
+        assert result == ['123', '456', '789']
+        mock_streamer_get_ids_from_logins.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_parse_streamers_from_command_with_names(self, mocker):
+        # Mock the global twitch_obj
+        mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
+
+        streamers = ['streamer1', 'streamer2', 'streamer3']
+        mock_streamer_get_ids_from_logins = AsyncMock(return_value=['123', '456', '789'])
+        mocker.patch('bot.main.streamer_get_ids_from_logins', mock_streamer_get_ids_from_logins)
+
+        result = await parse_streamers_from_command(streamers)
+        assert result == ['123', '456', '789']
+        mock_streamer_get_ids_from_logins.assert_called_once_with(mocker.ANY, streamers)
+
+    @pytest.mark.asyncio
+    async def test_parse_streamers_from_command_with_urls(self, mocker):
+        # Mock the global twitch_obj
+        mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
+
+        streamers = ['https://twitch.tv/streamer1', 'https://twitch.tv/streamer2']
+        mock_streamer_get_ids_from_logins = AsyncMock(return_value=['123', '456'])
+        mocker.patch('bot.main.streamer_get_ids_from_logins', mock_streamer_get_ids_from_logins)
+
+        result = await parse_streamers_from_command(streamers)
+        assert result == ['123', '456']
+        mock_streamer_get_ids_from_logins.assert_called_once_with(mocker.ANY, ['streamer1', 'streamer2'])
+
+    # User gives no parameters to notify command which results in empty tuple
+    @pytest.mark.asyncio
+    async def test_parse_streamers_from_command_with_no_parameters(self, mocker):
+        # Mock the global twitch_obj
+        mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
+
+        streamers = ()  # Empty tuple to simulate no parameters passed
+        result = await parse_streamers_from_command(streamers)
+        assert result == []
+
+    #  Should return a list of streamer IDs when given a mix of streamer IDs, names, and URLs
+    @pytest.mark.asyncio
+    async def test_parse_streamers_from_command_with_mixed_inputs(self, mocker):
+        # Mock the global twitch_obj
+        mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
+
+        streamers = ['123', 'streamer1', 'https://twitch.tv/streamer2']
+        mock_streamer_get_ids_from_logins = AsyncMock(return_value=['456', '789'])
+        mocker.patch('bot.main.streamer_get_ids_from_logins', mock_streamer_get_ids_from_logins)
+
+        result = await parse_streamers_from_command(streamers)
+        assert result == ['123', '456', '789']
+        mock_streamer_get_ids_from_logins.assert_called_once_with(mocker.ANY, ['streamer1', 'streamer2'])
+
+    #  Should return an empty list when given an empty list
+    @pytest.mark.asyncio
+    async def test_parse_streamers_from_command_with_empty_input(self, mocker):
+        # Mock the global twitch_obj
+        mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
+
+        streamers = []
+        result = await parse_streamers_from_command(streamers)
+        assert result == []
+
+    #  Should return [] when given a list of streamer names that don't exist
+    @pytest.mark.asyncio
+    async def test_parse_streamers_from_command_with_invalid_names(self, mocker):
+        # Mock the global twitch_obj
+        mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
+
+        streamers = ['invalid_streamer1', 'invalid_streamer2']
+        mock_streamer_get_ids_from_logins = AsyncMock(return_value=None)
+        mocker.patch('bot.main.streamer_get_ids_from_logins', mock_streamer_get_ids_from_logins)
+
+        result = await parse_streamers_from_command(streamers)
+        assert result == []
+        mock_streamer_get_ids_from_logins.assert_called_once_with(mocker.ANY, streamers)
+
+    #  Should return [] when given a list with a non-existent streamer ID
+    @pytest.mark.asyncio
+    async def test_parse_streamers_from_command_with_nonexistent_streamer_id(self, mocker):
+        # Mock the global twitch_obj
+        mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
+
+        streamers = ['123', '456']
+        mock_streamer_get_ids_from_logins = AsyncMock(return_value=None)
+        mocker.patch('bot.main.streamer_get_ids_from_logins', mock_streamer_get_ids_from_logins)
+
+        # Call the parse_streamers_from_command function with a list containing a non-existent streamer ID
+        result = await parse_streamers_from_command(streamers)
+
+        # Check that the result is []
+        assert result == []
+        mock_streamer_get_ids_from_logins.assert_called_once_with(mocker.ANY, streamers)
+
+    #  Should return None when given a list with non-existent URLs or incorrect ones
+    @pytest.mark.asyncio
+    async def test_parse_streamers_from_command_with_invalid_urls(self, mocker):
+        # Mock the global twitch_obj
+        mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
+
+        streamers = ['https://invalid.com/streamer1', 'https://twitch.tv/invalid_streamer2']
+        mock_streamer_get_ids_from_logins = AsyncMock(return_value=None)
+        mocker.patch('bot.main.streamer_get_ids_from_logins', mock_streamer_get_ids_from_logins)
+
+        result = await parse_streamers_from_command(streamers)
+        assert result == []
+        mock_streamer_get_ids_from_logins.assert_called_once_with(mocker.ANY, ['https://invalid.com/streamer1', 'invalid_streamer2'])
+
+    @pytest.mark.asyncio
+    async def test_parse_streamers_from_command_with_uninitialized_twitch_obj(self, mocker):
+        # Mock the global twitch_obj as None
+        mocker.patch('bot.main.twitch_obj', None)
+
+        streamers = ['123', 'streamer1']
+        with pytest.raises(ValueError) as excinfo:
+            await parse_streamers_from_command(streamers)
+        assert str(excinfo.value) == "Global variable not initialized."
