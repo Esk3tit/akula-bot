@@ -152,10 +152,13 @@ class TestParseStreamersFromCommand:
         streamers = ['123', '456', '789']
         mock_streamer_get_ids_from_logins = AsyncMock()
         mocker.patch('bot.main.streamer_get_ids_from_logins', mock_streamer_get_ids_from_logins)
+        mock_validate_streamer_ids = AsyncMock(return_value=['123', '456', '789'])
+        mocker.patch('bot.main.validate_streamer_ids', mock_validate_streamer_ids)
 
         result = await parse_streamers_from_command(streamers)
         assert result == ['123', '456', '789']
         mock_streamer_get_ids_from_logins.assert_not_called()
+        mock_validate_streamer_ids.assert_called_once_with(mocker.ANY, streamers)
 
     @pytest.mark.asyncio
     async def test_parse_streamers_from_command_with_names(self, mocker):
@@ -165,10 +168,13 @@ class TestParseStreamersFromCommand:
         streamers = ['streamer1', 'streamer2', 'streamer3']
         mock_streamer_get_ids_from_logins = AsyncMock(return_value=['123', '456', '789'])
         mocker.patch('bot.main.streamer_get_ids_from_logins', mock_streamer_get_ids_from_logins)
+        mock_validate_streamer_ids = AsyncMock()
+        mocker.patch('bot.main.validate_streamer_ids', mock_validate_streamer_ids)
 
         result = await parse_streamers_from_command(streamers)
         assert result == ['123', '456', '789']
         mock_streamer_get_ids_from_logins.assert_called_once_with(mocker.ANY, streamers)
+        mock_validate_streamer_ids.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_parse_streamers_from_command_with_urls(self, mocker):
@@ -178,10 +184,13 @@ class TestParseStreamersFromCommand:
         streamers = ['https://twitch.tv/streamer1', 'https://twitch.tv/streamer2']
         mock_streamer_get_ids_from_logins = AsyncMock(return_value=['123', '456'])
         mocker.patch('bot.main.streamer_get_ids_from_logins', mock_streamer_get_ids_from_logins)
+        mock_validate_streamer_ids = AsyncMock()
+        mocker.patch('bot.main.validate_streamer_ids', mock_validate_streamer_ids)
 
         result = await parse_streamers_from_command(streamers)
         assert result == ['123', '456']
         mock_streamer_get_ids_from_logins.assert_called_once_with(mocker.ANY, ['streamer1', 'streamer2'])
+        mock_validate_streamer_ids.assert_not_called()
 
     # User gives no parameters to notify command which results in empty tuple
     @pytest.mark.asyncio
@@ -189,9 +198,16 @@ class TestParseStreamersFromCommand:
         # Mock the global twitch_obj
         mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
 
+        mock_streamer_get_ids_from_logins = AsyncMock()
+        mocker.patch('bot.main.streamer_get_ids_from_logins', mock_streamer_get_ids_from_logins)
+        mock_validate_streamer_ids = AsyncMock()
+        mocker.patch('bot.main.validate_streamer_ids', mock_validate_streamer_ids)
+
         streamers = ()  # Empty tuple to simulate no parameters passed
         result = await parse_streamers_from_command(streamers)
         assert result == []
+        mock_validate_streamer_ids.assert_not_called()
+        mock_streamer_get_ids_from_logins.assert_not_called()
 
     #  Should return a list of streamer IDs when given a mix of streamer IDs, names, and URLs
     @pytest.mark.asyncio
@@ -202,20 +218,13 @@ class TestParseStreamersFromCommand:
         streamers = ['123', 'streamer1', 'https://twitch.tv/streamer2']
         mock_streamer_get_ids_from_logins = AsyncMock(return_value=['456', '789'])
         mocker.patch('bot.main.streamer_get_ids_from_logins', mock_streamer_get_ids_from_logins)
+        mock_validate_streamer_ids = AsyncMock(return_value=['123'])
+        mocker.patch('bot.main.validate_streamer_ids', mock_validate_streamer_ids)
 
         result = await parse_streamers_from_command(streamers)
         assert result == ['123', '456', '789']
         mock_streamer_get_ids_from_logins.assert_called_once_with(mocker.ANY, ['streamer1', 'streamer2'])
-
-    #  Should return an empty list when given an empty list
-    @pytest.mark.asyncio
-    async def test_parse_streamers_from_command_with_empty_input(self, mocker):
-        # Mock the global twitch_obj
-        mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
-
-        streamers = []
-        result = await parse_streamers_from_command(streamers)
-        assert result == []
+        mock_validate_streamer_ids.assert_called_once_with(mocker.ANY, ['123'])
 
     #  Should return [] when given a list of streamer names that don't exist
     @pytest.mark.asyncio
@@ -226,10 +235,13 @@ class TestParseStreamersFromCommand:
         streamers = ['invalid_streamer1', 'invalid_streamer2']
         mock_streamer_get_ids_from_logins = AsyncMock(return_value=None)
         mocker.patch('bot.main.streamer_get_ids_from_logins', mock_streamer_get_ids_from_logins)
+        mock_validate_streamer_ids = AsyncMock()
+        mocker.patch('bot.main.validate_streamer_ids', mock_validate_streamer_ids)
 
         result = await parse_streamers_from_command(streamers)
         assert result == []
         mock_streamer_get_ids_from_logins.assert_called_once_with(mocker.ANY, streamers)
+        mock_validate_streamer_ids.assert_not_called()
 
     #  Should return [] when given a list with a non-existent streamer ID
     @pytest.mark.asyncio
@@ -238,15 +250,18 @@ class TestParseStreamersFromCommand:
         mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
 
         streamers = ['123', '456']
-        mock_streamer_get_ids_from_logins = AsyncMock(return_value=None)
+        mock_streamer_get_ids_from_logins = AsyncMock()
         mocker.patch('bot.main.streamer_get_ids_from_logins', mock_streamer_get_ids_from_logins)
+        mock_validate_streamer_ids = AsyncMock(return_value=[])
+        mocker.patch('bot.main.validate_streamer_ids', mock_validate_streamer_ids)
 
         # Call the parse_streamers_from_command function with a list containing a non-existent streamer ID
         result = await parse_streamers_from_command(streamers)
 
         # Check that the result is []
         assert result == []
-        mock_streamer_get_ids_from_logins.assert_called_once_with(mocker.ANY, streamers)
+        mock_streamer_get_ids_from_logins.assert_not_called()
+        mock_validate_streamer_ids.assert_called_once_with(mocker.ANY, streamers)
 
     #  Should return None when given a list with non-existent URLs or incorrect ones
     @pytest.mark.asyncio
@@ -257,17 +272,26 @@ class TestParseStreamersFromCommand:
         streamers = ['https://invalid.com/streamer1', 'https://twitch.tv/invalid_streamer2']
         mock_streamer_get_ids_from_logins = AsyncMock(return_value=None)
         mocker.patch('bot.main.streamer_get_ids_from_logins', mock_streamer_get_ids_from_logins)
+        mock_validate_streamer_ids = AsyncMock()
+        mocker.patch('bot.main.validate_streamer_ids', mock_validate_streamer_ids)
 
         result = await parse_streamers_from_command(streamers)
         assert result == []
         mock_streamer_get_ids_from_logins.assert_called_once_with(mocker.ANY, ['https://invalid.com/streamer1', 'invalid_streamer2'])
+        mock_validate_streamer_ids.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_parse_streamers_from_command_with_uninitialized_twitch_obj(self, mocker):
         # Mock the global twitch_obj as None
         mocker.patch('bot.main.twitch_obj', None)
+        mock_validate_streamer_ids = AsyncMock()
+        mocker.patch('bot.main.validate_streamer_ids', mock_validate_streamer_ids)
+        mock_streamer_get_ids_from_logins = AsyncMock()
+        mocker.patch('bot.main.streamer_get_ids_from_logins', mock_streamer_get_ids_from_logins)
 
         streamers = ['123', 'streamer1']
         with pytest.raises(ValueError) as excinfo:
             await parse_streamers_from_command(streamers)
         assert str(excinfo.value) == "Global variable not initialized."
+        mock_validate_streamer_ids.assert_not_called()
+        mock_streamer_get_ids_from_logins.assert_not_called()

@@ -17,7 +17,7 @@ from twitchAPI.eventsub.webhook import EventSubWebhook
 from twitchAPI.type import TwitchAPIException
 
 from bot.bot_ui import ConfigView, create_streamsnipe_draft_embed, create_config_embed
-from bot.bot_utils import is_owner, get_first_text_channel
+from bot.bot_utils import is_owner, get_first_text_channel, validate_streamer_ids
 from bot.models import Base, Guild, UserSubscription, Streamer
 
 # Load dotenv if on local env (check for prod only env var)
@@ -111,17 +111,17 @@ async def streamer_get_ids_from_logins(twitch: Twitch, broadcaster_logins: list[
 
 
 async def parse_streamers_from_command(streamers):
-    print(streamers)
     if twitch_obj is None:
         raise ValueError("Global variable not initialized.")
     res = []
     need_conversion = []
+    need_validation = []
     # Robustly match twitch URLs, so that we don't convert streamer names from invalid domains
     # even if the streamer name there is valid
     twitch_url_pattern = re.compile(r'^https?://(?:www\.)?twitch\.tv/(\w+)(?:/.*)?$')
     for streamer in streamers:
         if streamer.isdigit():
-            res.append(streamer)
+            need_validation.append(streamer)
         else:
             url_match = twitch_url_pattern.match(streamer)
             if url_match:
@@ -130,12 +130,19 @@ async def parse_streamers_from_command(streamers):
             else:
                 need_conversion.append(streamer)
 
+    if need_validation:
+        valid_ids = await validate_streamer_ids(twitch_obj, need_validation)
+        if valid_ids:
+            res.extend(valid_ids)
+        else:
+            return []
+
     if need_conversion:
         ids = await streamer_get_ids_from_logins(twitch_obj, need_conversion)
         if ids:
             res.extend(ids)
         else:
-            res = []
+            return []
     return res
 
 
