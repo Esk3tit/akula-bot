@@ -2,7 +2,6 @@ import asyncio
 import os
 import pprint
 import re
-from urllib.parse import urlparse
 
 import discord
 from discord import app_commands
@@ -14,10 +13,10 @@ from twitchAPI.object.eventsub import StreamOnlineEvent
 from twitchAPI.twitch import Twitch
 from dotenv import load_dotenv
 from twitchAPI.eventsub.webhook import EventSubWebhook
-from twitchAPI.type import TwitchAPIException
 
 from bot.bot_ui import ConfigView, create_streamsnipe_draft_embed, create_config_embed
-from bot.bot_utils import is_owner, get_first_text_channel, validate_streamer_ids
+from bot.bot_utils import is_owner, get_first_text_channel, validate_streamer_ids, streamer_get_ids_from_logins, \
+    streamer_get_names_from_ids
 from bot.models import Base, Guild, UserSubscription, Streamer
 
 # Load dotenv if on local env (check for prod only env var)
@@ -94,20 +93,6 @@ async def subscribe_all(webhook):
         for s in session.scalars(select(Streamer)).all():
             s.topic_sub_id = await webhook.listen_stream_online(s.streamer_id, on_stream_online)
         session.commit()
-
-
-async def streamer_get_names_from_ids(twitch: Twitch, ids: list[str]):
-    try:
-        return {user.id: user.display_name async for user in twitch.get_users(user_ids=ids)}
-    except TwitchAPIException:
-        return None
-
-
-async def streamer_get_ids_from_logins(twitch: Twitch, broadcaster_logins: list[str]):
-    try:
-        return [user.id async for user in twitch.get_users(logins=broadcaster_logins)]
-    except TwitchAPIException:
-        return None
 
 
 async def parse_streamers_from_command(streamers):
@@ -210,7 +195,7 @@ async def notify(ctx, *streamers):
         # Needs to exist in streamer table before insert into user sub
         clean_streamers = await parse_streamers_from_command(streamers)
         if not clean_streamers:
-            return await ctx.send(f'{ctx.author.mention} Unable to find given streamer(s), please try again... MAGGOT!')
+            return await ctx.send(f'{ctx.author.mention} Unable to find one of the given streamer(s), please try again... MAGGOT!')
         id_to_name = await streamer_get_names_from_ids(twitch_obj, clean_streamers)
         for s in clean_streamers:
             streamer = session.scalar(select(Streamer).where(Streamer.streamer_id == s))
