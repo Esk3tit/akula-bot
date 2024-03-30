@@ -359,10 +359,9 @@ async def on_ready():
     await webhook.unsubscribe_all()
     webhook.start()
     webhook_obj = webhook
-    # await bot.get_channel(1076360774882185268).send('BOT IS ONLINE')
-    print("Subscribing to notif")
+    print("Subscribing to streamers... Please wait...")
     await subscribe_all(webhook)
-    print("Subscribed to notif!")
+    print("Successfully subscribed to all streamers in the DB!")
     await bot.tree.sync()
 
 

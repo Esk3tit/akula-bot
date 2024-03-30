@@ -22,7 +22,7 @@ async def streamer_get_names_from_ids(twitch: Twitch, ids: list[str]):
         return {user.id: user.display_name async for user in twitch.get_users(user_ids=ids)}
     except TwitchAPIException as e:
         print(e)
-        return None
+        return []
 
 
 async def streamer_get_ids_from_logins(twitch: Twitch, broadcaster_logins: list[str]):
@@ -30,7 +30,7 @@ async def streamer_get_ids_from_logins(twitch: Twitch, broadcaster_logins: list[
         return [user.id async for user in twitch.get_users(logins=broadcaster_logins)]
     except TwitchAPIException as e:
         print(e)
-        return None
+        return []
 
 
 async def validate_streamer_ids(twitch: Twitch, ids: List[str]) -> List[str]:
