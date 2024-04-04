@@ -16,7 +16,7 @@ from twitchAPI.eventsub.webhook import EventSubWebhook
 
 from bot.bot_ui import ConfigView, create_streamsnipe_draft_embed, create_config_embed
 from bot.bot_utils import is_owner, get_first_text_channel, validate_streamer_ids, streamer_get_ids_from_logins, \
-    streamer_get_names_from_ids
+    streamer_get_names_from_ids, is_owner_or_optin_mode
 from bot.models import Base, Guild, UserSubscription, Streamer
 
 # Load dotenv if on local env (check for prod only env var)
@@ -55,27 +55,33 @@ async def on_stream_online(data: StreamOnlineEvent):
             for row in session.execute(stmt).all():
                 if row[0].guild_id not in guild_users_map:
                     guild_users_map[row[0].guild_id] = {'notif_channel_id': row[0].notification_channel_id,
-                                                        'user_ids': [],
+                                                        'user_ids': set(),
                                                         'notif_mode': row[0].notification_mode}
-                guild_users_map[row[0].guild_id]['user_ids'].append(row[1])
+                guild_users_map[row[0].guild_id]['user_ids'].add(row[1])
 
         # Iterate through all servers and notify users in each one
         for guild_id, user_sub_obj in guild_users_map.items():
             channel = bot.get_channel(int(user_sub_obj['notif_channel_id']))
             if channel:
-                await channel.send(embed=embed)
-
-                # Check notification mode and act accordingly
+                # Check notification mode and act accordingly, only send if server owner
+                # is subbed in global or passive mode
                 notification_mode = user_sub_obj['notif_mode']
-                if notification_mode == 'global':
+                if notification_mode == 'global' or notification_mode == 'passive':
                     guild = bot.get_guild(int(guild_id))
-                    if guild.me.guild_permissions.mention_everyone:
-                        await channel.send('@everyone')
-                    else:
-                        await channel.send(
-                            "The bot doesn't have permission to mention everyone. Mentioning here instead.")
-                        await channel.send('@here')
-                elif notification_mode == 'optin':
+                    owner_id = str(guild.owner_id)
+                    if owner_id in user_sub_obj['user_ids']:
+                        await channel.send(embed=embed)
+                        # Send embed now for both global and passive, but only mention everyone
+                        # or here if global
+                        if notification_mode == 'global':
+                            if guild.me.guild_permissions.mention_everyone:
+                                await channel.send('@everyone')
+                            else:
+                                await channel.send(
+                                    "The bot doesn't have permission to mention everyone. Mentioning here instead.")
+                                await channel.send('@here')
+                else:
+                    await channel.send(embed=embed)
                     await channel.send(' '.join(f"<@{user_id}>" for user_id in user_sub_obj['user_ids']))
 
     # Schedule in the discord.py's event loop
@@ -185,10 +191,14 @@ async def on_guild_remove(guild):
 
 
 @bot.command(name='notify', description='Get notified when a streamer goes live!')
+@is_owner_or_optin_mode(engine)
 async def notify(ctx, *streamers):
     if webhook_obj is None:
         raise ValueError('Global reference not initialized...')
     with Session(engine) as session:
+        # Check if we are in global or passive notif mode,
+        # only server owner can use command
+
         # Check if we need to insert streamer into streamer table
         # (if it is first time streamer is ever being watched)
         # Commit before try catch to avoid foreign key constraint
@@ -227,7 +237,16 @@ async def notify(ctx, *streamers):
             )
 
 
+@notify.error
+async def notify_error(ctx, _):
+    await ctx.send(
+        f"{ctx.author.mention} You don't have permission to use this command... (server notification mode not optin)",
+        ephemeral=True
+    )
+
+
 @bot.command(name='unnotify', description='Unsubscribe from notification when a streamer goes live!')
+@is_owner_or_optin_mode(engine)
 async def unnotify(ctx, *streamers):
     if not twitch_obj or not webhook_obj:
         raise ValueError('Global reference not initialized...')
@@ -270,6 +289,14 @@ async def unnotify(ctx, *streamers):
         await ctx.send(f'{ctx.author.mention} You will no longer be notified for: {", ".join(success)}!')
     if fail:
         await ctx.send(f'{ctx.author.mention} Unable to unsubscribe from: {", ".join(fail)}!')
+
+
+@unnotify.error
+async def unnotify_error(ctx, _):
+    await ctx.send(
+        f"{ctx.author.mention} You don't have permission to use this command... (server notification mode not optin)",
+        ephemeral=True
+    )
 
 
 @bot.hybrid_command(name='notifs', description='Get current streamers that you are getting notifications for.')
