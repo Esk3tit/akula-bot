@@ -104,37 +104,38 @@ async def subscribe_all(webhook):
 async def parse_streamers_from_command(streamers):
     if twitch_obj is None:
         raise ValueError("Global variable not initialized.")
-    res = []
-    need_conversion = []
-    need_validation = []
+    res = set()
+    need_conversion = set()
+    need_validation = set()
+
     # Robustly match twitch URLs, so that we don't convert streamer names from invalid domains
     # even if the streamer name there is valid
     twitch_url_pattern = re.compile(r'^https?://(?:www\.)?twitch\.tv/(\w+)(?:/.*)?$')
     for streamer in streamers:
         if streamer.isdigit():
-            need_validation.append(streamer)
+            need_validation.add(streamer)
         else:
             url_match = twitch_url_pattern.match(streamer)
             if url_match:
                 streamer_name = url_match.group(1)
-                need_conversion.append(streamer_name)
+                need_conversion.add(streamer_name)
             else:
-                need_conversion.append(streamer)
+                need_conversion.add(streamer)
 
     if need_validation:
-        valid_ids = await validate_streamer_ids(twitch_obj, need_validation)
+        valid_ids = await validate_streamer_ids(twitch_obj, list(need_validation))
         if valid_ids:
-            res.extend(valid_ids)
+            res.update(valid_ids)
         else:
             return []
 
     if need_conversion:
-        ids = await streamer_get_ids_from_logins(twitch_obj, need_conversion)
+        ids = await streamer_get_ids_from_logins(twitch_obj, list(need_conversion))
         if ids:
-            res.extend(ids)
+            res.update(ids)
         else:
             return []
-    return res
+    return list(res)
 
 
 @bot.event

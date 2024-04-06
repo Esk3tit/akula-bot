@@ -60,8 +60,8 @@ class TestStreamerGetNamesFromIds:
         ids = ['123', '456']
         result = await streamer_get_names_from_ids(mock_twitch, ids)
 
-        # Assert that the result is an empty list when an exception is raised
-        assert result == []
+        # Assert that the result is an empty dict when an exception is raised
+        assert result == {}
         mock_twitch.get_users.assert_called_once_with(user_ids=ids)
 
 
@@ -196,24 +196,3 @@ class TestValidateStreamerIds:
 
         # Assert that get_users was called with the correct arguments
         mock_twitch.get_users.assert_called_once_with(user_ids=ids)
-
-    # #  The function returns a list of user ids when given a list of duplicate user ids.
-    # @pytest.mark.asyncio
-    # async def test_duplicate_user_ids(self, mocker):
-    #     # Mock the Twitch API response
-    #     mock_twitch = mocker.Mock(spec=Twitch)
-    #     mock_response = [
-    #         {"id": "12345"},
-    #         {"id": "12345"},
-    #         {"id": "12345"}
-    #     ]
-    #     mocker.patch.object(Twitch, "get_users", return_value=mock_response)
-    #
-    #     # Create a Twitch instance
-    #     twitch = Twitch("client_id", "client_secret")
-    #
-    #     # Call the function under test
-    #     result = await validate_streamer_ids(twitch, ["12345", "12345", "12345"])
-    #
-    #     # Assert the result is the expected list of user ids
-    #     assert result == ["12345", "12345", "12345"]

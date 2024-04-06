@@ -1,5 +1,3 @@
-from typing import List
-
 import discord
 from discord.ext import commands
 from discord.ext.commands import Context
@@ -36,7 +34,7 @@ async def streamer_get_names_from_ids(twitch: Twitch, ids: list[str]):
         return {user.id: user.display_name async for user in twitch.get_users(user_ids=ids)}
     except TwitchAPIException as e:
         print(e)
-        return []
+        return {}
 
 
 async def streamer_get_ids_from_logins(twitch: Twitch, broadcaster_logins: list[str]):
@@ -47,7 +45,7 @@ async def streamer_get_ids_from_logins(twitch: Twitch, broadcaster_logins: list[
         return []
 
 
-async def validate_streamer_ids(twitch: Twitch, ids: List[str]) -> List[str]:
+async def validate_streamer_ids(twitch: Twitch, ids: list[str]) -> list[str]:
     try:
         return [user.id async for user in twitch.get_users(user_ids=ids)]
     except TwitchAPIException as e:
