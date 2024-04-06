@@ -29,13 +29,16 @@ postgres_connection_str = os.getenv('POSTGRESQL_URL')
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix='!', intents=intents)
 
+# DB Init
+engine = create_engine(postgres_connection_str, echo=True, pool_pre_ping=True, pool_recycle=300)
+Base.metadata.create_all(engine)
+
 # Twitch stuff
 client_id = 'lgzs735eq4rb8o04gbpprk7ia3vge1'
 
 # Global references
 twitch_obj: Twitch | None = None
 webhook_obj: EventSubWebhook | None = None
-engine_obj: Engine | None = None
 
 
 async def on_stream_online(data: StreamOnlineEvent):
@@ -46,7 +49,7 @@ async def on_stream_online(data: StreamOnlineEvent):
         guild_users_map = {}
         stmt = select(Guild, UserSubscription.user_id).join(Guild.user_subscriptions).join(
             UserSubscription.streamer).where(Streamer.streamer_id == str(data.event.broadcaster_user_id))
-        with Session(engine_obj) as session:
+        with Session(engine) as session:
             for row in session.execute(stmt).all():
                 if row[0].guild_id not in guild_users_map:
                     guild_users_map[row[0].guild_id] = {'notif_channel_id': row[0].notification_channel_id,
@@ -90,7 +93,7 @@ async def subscribe_all(webhook):
 
     :return: None
     """
-    with Session(engine_obj) as session:
+    with Session(engine) as session:
         for s in session.scalars(select(Streamer)).all():
             s.topic_sub_id = await webhook.listen_stream_online(s.streamer_id, on_stream_online)
         session.commit()
@@ -163,7 +166,7 @@ async def on_guild_join(guild: discord.Guild):
     new_server = Guild(guild_id=str(guild.id),
                        notification_channel_id=str(config_button.channel.id or channel.id),
                        notification_mode=config_button.notification_mode)
-    with Session(engine_obj) as session:
+    with Session(engine) as session:
         session.add(new_server)
         session.commit()
 
@@ -172,7 +175,7 @@ async def on_guild_join(guild: discord.Guild):
 async def on_guild_remove(guild):
     # Remove guild from guilds DB, don't have objects of guild
     # so need to do it with Core/non-Unit of Work pattern
-    with Session(engine_obj) as session:
+    with Session(engine) as session:
         session.execute(delete(Guild).where(Guild.guild_id == str(guild.id)))
 
         # Cascade occurs and user subs table should have some entries removed
@@ -187,11 +190,11 @@ async def on_guild_remove(guild):
 
 
 @bot.command(name='notify', description='Get notified when a streamer goes live!')
-@is_owner_or_optin_mode(engine_obj)
+@is_owner_or_optin_mode(engine)
 async def notify(ctx, *streamers):
-    if webhook_obj is None or engine_obj is None:
+    if webhook_obj is None:
         raise ValueError('Global reference not initialized...')
-    with Session(engine_obj) as session:
+    with Session(engine) as session:
         # Check if we are in global or passive notif mode,
         # only server owner can use command
 
@@ -242,13 +245,13 @@ async def notify_error(ctx, _):
 
 
 @bot.command(name='unnotify', description='Unsubscribe from notification when a streamer goes live!')
-@is_owner_or_optin_mode(engine_obj)
+@is_owner_or_optin_mode(engine)
 async def unnotify(ctx, *streamers):
-    if webhook_obj is None or engine_obj is None:
+    if webhook_obj is None:
         raise ValueError('Global reference not initialized...')
     success = []
     fail = []
-    with Session(engine_obj) as session:
+    with Session(engine) as session:
         clean_streamers = await parse_streamers_from_command(streamers)
         if not clean_streamers:
             return await ctx.send(f'{ctx.author.mention} Unable to find given streamer, please try again... MAGGOT!')
@@ -297,7 +300,7 @@ async def unnotify_error(ctx, _):
 
 @bot.hybrid_command(name='notifs', description='Get current streamers that you are getting notifications for.')
 async def notifs(ctx):
-    with Session(engine_obj) as session:
+    with Session(engine) as session:
         notified_streamers = session.scalars(
             select(UserSubscription.streamer_id).where(
                 UserSubscription.user_id == str(ctx.author.id),
@@ -324,7 +327,7 @@ async def notifs(ctx):
 @bot.hybrid_command(name='changeconfig', description='Change configuration of the bot server-wide.')
 @app_commands.check(is_owner)
 async def changeconfig(ctx):
-    with Session(engine_obj) as session:
+    with Session(engine) as session:
         guild_config = session.scalar(select(Guild).where(Guild.guild_id == str(ctx.guild.id)))
         embed = create_config_embed(bot.get_channel(int(guild_config.notification_channel_id)).name,
                                     guild_config.notification_mode,
@@ -339,7 +342,7 @@ async def changeconfig(ctx):
 
     # Write to DB here after getting values from view
     channel = get_first_text_channel(ctx.guild)
-    with Session(engine_obj) as session:
+    with Session(engine) as session:
         session.execute(
             update(Guild).
             where(Guild.guild_id == str(ctx.guild.id)).
@@ -358,7 +361,7 @@ async def changeconfig_error(ctx, error):
 
 # @bot.hybrid_command(name='test', description='for testing code when executed')
 # async def test(ctx):
-#     with Session(engine_obj) as session:
+#     with Session(engine) as session:
 #         streamer_ids = session.scalars(select(Streamer.streamer_id)).all()
 #         async for user in twitch_obj.get_users(user_ids=streamer_ids):
 #             streamer = session.scalar(select(Streamer))
@@ -391,7 +394,4 @@ async def on_ready():
 if __name__ == '__main__':
     # When pytest imports this file this runs the bot without this check
     # since when importing the imported file is executed...
-    engine = create_engine(postgres_connection_str, echo=True, pool_pre_ping=True, pool_recycle=300)
-    Base.metadata.create_all(engine)
-    engine_obj = engine
     bot.run(TOKEN)
