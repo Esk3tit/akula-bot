@@ -189,7 +189,7 @@ async def on_guild_remove(guild):
 @bot.command(name='notify', description='Get notified when a streamer goes live!')
 @is_owner_or_optin_mode(engine_obj)
 async def notify(ctx, *streamers):
-    if webhook_obj is None:
+    if webhook_obj is None or engine_obj is None:
         raise ValueError('Global reference not initialized...')
     with Session(engine_obj) as session:
         # Check if we are in global or passive notif mode,
@@ -244,7 +244,7 @@ async def notify_error(ctx, _):
 @bot.command(name='unnotify', description='Unsubscribe from notification when a streamer goes live!')
 @is_owner_or_optin_mode(engine_obj)
 async def unnotify(ctx, *streamers):
-    if not twitch_obj or not webhook_obj:
+    if webhook_obj is None or engine_obj is None:
         raise ValueError('Global reference not initialized...')
     success = []
     fail = []
