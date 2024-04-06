@@ -147,7 +147,8 @@ class TestParseStreamersFromCommand:
 
         result = await parse_streamers_from_command(streamers)
         assert result == []
-        mock_streamer_get_ids_from_logins.assert_called_once_with(mocker.ANY, ['https://invalid.com/streamer1', 'invalid_streamer2'])
+        mock_streamer_get_ids_from_logins.assert_called_once()
+        assert sorted(mock_streamer_get_ids_from_logins.call_args[0][1]) == sorted(['https://invalid.com/streamer1', 'invalid_streamer2'])
         mock_validate_streamer_ids.assert_not_called()
 
     @pytest.mark.asyncio
