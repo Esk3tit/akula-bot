@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, call
+from unittest.mock import AsyncMock
 import pytest
 from bot.main import parse_streamers_from_command
 from twitchAPI.twitch import Twitch

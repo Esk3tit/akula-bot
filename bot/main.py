@@ -121,16 +121,16 @@ async def parse_streamers_from_command(streamers):
                 need_conversion.add(streamer)
 
     if need_validation:
-        valid_ids = await validate_streamer_ids(twitch_obj, list(need_validation))
-        if valid_ids:
-            res.update(valid_ids)
+        valid_ids_names = await validate_streamer_ids(twitch_obj, list(need_validation))
+        if valid_ids_names:
+            res.update(valid_ids_names)
         else:
             return []
 
     if need_conversion:
-        ids = await streamer_get_ids_from_logins(twitch_obj, list(need_conversion))
-        if ids:
-            res.update(ids)
+        ids_names = await streamer_get_ids_from_logins(twitch_obj, list(need_conversion))
+        if ids_names:
+            res.update(ids_names)
         else:
             return []
     return list(res)
@@ -205,12 +205,12 @@ async def notify(ctx, *streamers):
         clean_streamers = await parse_streamers_from_command(streamers)
         if not clean_streamers:
             return await ctx.send(f'{ctx.author.mention} Unable to find one of the given streamer(s), please try again... MAGGOT!')
-        id_to_name = await streamer_get_names_from_ids(twitch_obj, clean_streamers)
-        for s in clean_streamers:
-            streamer = session.scalar(select(Streamer).where(Streamer.streamer_id == s))
+        # id_to_name = await streamer_get_names_from_ids(twitch_obj, clean_streamers)
+        for s_dict in clean_streamers:
+            streamer = session.scalar(select(Streamer).where(Streamer.streamer_id == s_dict['id']))
             if not streamer:
-                topic = await webhook_obj.listen_stream_online(s, on_stream_online)
-                new_streamer = Streamer(streamer_id=s, streamer_name=id_to_name[s], topic_sub_id=topic)
+                topic = await webhook_obj.listen_stream_online(s_dict['id'], on_stream_online)
+                new_streamer = Streamer(streamer_id=s_dict['id'], streamer_name=s_dict['name'], topic_sub_id=topic)
                 session.add(new_streamer)
         session.commit()
 
@@ -229,7 +229,7 @@ async def notify(ctx, *streamers):
             )
             session.commit()
             await ctx.send(f'{ctx.author.mention} will now be notified of when the following streamers are live!')
-            await ctx.send(f'`{", ".join([id_to_name[s] for s in clean_streamers])}`')
+            await ctx.send(f'`{", ".join([s_dict["name"] for s_dict in clean_streamers])}`')
         except IntegrityError as e:
             print("Dupe notify", e)
             session.rollback()
