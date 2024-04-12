@@ -4,7 +4,7 @@ import re
 
 import discord
 from discord import app_commands
-from sqlalchemy import create_engine, select, delete, insert, update, Engine
+from sqlalchemy import create_engine, select, delete, insert, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from discord.ext import commands
@@ -228,8 +228,10 @@ async def notify(ctx, *streamers):
                 ]
             )
             session.commit()
-            await ctx.send(f'{ctx.author.mention} will now be notified of when the streamer(s) are live!')
-        except IntegrityError:
+            await ctx.send(f'{ctx.author.mention} will now be notified of when the following streamers are live!')
+            await ctx.send(f'`{", ".join([id_to_name[s] for s in clean_streamers])}`')
+        except IntegrityError as e:
+            print("Dupe notify", e)
             session.rollback()
             await ctx.send(
                 f'{ctx.author.mention} you are already subscribed to some or all of the streamer(s)! Reverting...'
@@ -255,17 +257,18 @@ async def unnotify(ctx, *streamers):
         clean_streamers = await parse_streamers_from_command(streamers)
         if not clean_streamers:
             return await ctx.send(f'{ctx.author.mention} Unable to find given streamer, please try again... MAGGOT!')
-        for s in clean_streamers:
+
+        for original_arg, s in zip(streamers, clean_streamers):
             user_sub = session.scalar(
-                select(UserSubscription).where(
+                select(UserSubscription).join(UserSubscription.streamer).where(
                     UserSubscription.user_id == str(ctx.author.id),
                     UserSubscription.guild_id == str(ctx.guild.id),
-                    UserSubscription.streamer_id == s
+                    Streamer.streamer_id == s
                 )
             )
             if user_sub:
                 session.delete(user_sub)
-                success.append(s)
+                success.append(user_sub.streamer.streamer_name)
 
                 # Check if streamer references are still in user subs, remove from streamer table if not
                 # Can just check for existence of one (first) record, don't need to query all records if
@@ -273,14 +276,14 @@ async def unnotify(ctx, *streamers):
                 streamer_refs = session.scalars(
                     select(UserSubscription).where(UserSubscription.streamer_id == s)).first()
                 if not streamer_refs:
-                    streamer = session.scalar(select(Streamer))
+                    streamer = session.scalar(select(Streamer).where(Streamer.streamer_id == s))
                     status = await webhook_obj.unsubscribe_topic(streamer.topic_sub_id)
                     print(f'unsubbing topic {streamer.topic_sub_id} from streamer {streamer.streamer_name}')
                     if not status:
-                        print(f'failed to unsubscribe from streamer through API!!!!')
-                    session.execute(delete(Streamer).where(Streamer.streamer_id == s))
+                        print(f'failed to unsubscribe from streamer through API!')
+                    session.delete(streamer)
             else:
-                fail.append(s)
+                fail.append(original_arg)
 
         session.commit()
 
@@ -302,7 +305,7 @@ async def unnotify_error(ctx, _):
 async def notifs(ctx):
     with Session(engine) as session:
         notified_streamers = session.scalars(
-            select(UserSubscription.streamer_id).where(
+            select(Streamer.streamer_name).join(Streamer.user_subscriptions).where(
                 UserSubscription.user_id == str(ctx.author.id),
                 UserSubscription.guild_id == str(ctx.guild.id)
             )
@@ -312,7 +315,7 @@ async def notifs(ctx):
             embed = discord.Embed(title="Your Notification Subscriptions",
                                   description=f"Here are the streamers you're subscribed to in {ctx.guild.name}:",
                                   color=0x00ff00)
-            subscriptions_text = "\n".join([f"- {streamer_id}" for streamer_id in notified_streamers])
+            subscriptions_text = "\n".join([f"- {streamer_name}" for streamer_name in notified_streamers])
             if len(subscriptions_text) > 1024:
                 # Handle cases where the text exceeds the field value limit
                 embed.add_field(name="Subscribed Streamers", value="Too many subscriptions to display here!",
