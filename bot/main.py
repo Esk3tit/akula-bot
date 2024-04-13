@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from twitchAPI.eventsub.webhook import EventSubWebhook
 
 from bot.bot_ui import ConfigView, create_streamsnipe_draft_embed, create_config_embed
-from bot.bot_utils import is_owner, get_first_text_channel, validate_streamer_ids, streamer_get_ids_from_logins, \
+from bot.bot_utils import is_owner, get_first_text_channel, validate_streamer_ids_get_names, streamer_get_ids_names_from_logins, \
     streamer_get_names_from_ids, is_owner_or_optin_mode
 from bot.models import Base, Guild, UserSubscription, Streamer
 
@@ -121,14 +121,14 @@ async def parse_streamers_from_command(streamers):
                 need_conversion.add(streamer)
 
     if need_validation:
-        valid_ids_names = await validate_streamer_ids(twitch_obj, list(need_validation))
+        valid_ids_names = await validate_streamer_ids_get_names(twitch_obj, list(need_validation))
         if valid_ids_names:
             res.update(valid_ids_names)
         else:
             return []
 
     if need_conversion:
-        ids_names = await streamer_get_ids_from_logins(twitch_obj, list(need_conversion))
+        ids_names = await streamer_get_ids_names_from_logins(twitch_obj, list(need_conversion))
         if ids_names:
             res.update(ids_names)
         else:

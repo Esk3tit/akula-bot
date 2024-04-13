@@ -1,93 +1,41 @@
-from bot.bot_utils import validate_streamer_ids, streamer_get_names_from_ids, streamer_get_ids_from_logins
+from bot.bot_utils import validate_streamer_ids_get_names, streamer_get_ids_names_from_logins
 from twitchAPI.twitch import Twitch
 from twitchAPI.type import TwitchAPIException
 from twitchAPI.object.api import TwitchUser
 from typing import AsyncGenerator
 import pytest
 
-
-class TestStreamerGetNamesFromIds:
-    @pytest.mark.asyncio
-    async def test_streamer_get_names_from_ids_single_user(self, mocker):
-        # mock twitch and user
-        mock_twitch = mocker.Mock(spec=Twitch)
-        mock_user = mocker.Mock(spec=TwitchUser, id='123', display_name='user1')
-
-        async def mock_get_users(user_ids=None, logins=None) -> AsyncGenerator[TwitchUser, None]:
-            yield mock_user
-
-        mock_twitch.get_users.return_value = mock_get_users(user_ids=['123'])
-
-        # Call mocked function
-        result = await streamer_get_names_from_ids(mock_twitch, ['123'])
-
-        # Assert results
-        assert result == {'123': 'user1'}
-        mock_twitch.get_users.assert_called_once_with(user_ids=['123'])
-
-    @pytest.mark.asyncio
-    async def test_streamer_get_names_from_ids_multiple_users(self, mocker):
-        # Create a mock Twitch object
-        mock_twitch = mocker.Mock(spec=Twitch)
-
-        # Create mock TwitchUser objects
-        mock_user1 = mocker.Mock(spec=TwitchUser, id='123', display_name='TestStreamer1')
-        mock_user2 = mocker.Mock(spec=TwitchUser, id='456', display_name='TestStreamer2')
-
-        async def mock_get_users(user_ids=None, logins=None) -> AsyncGenerator[TwitchUser, None]:
-            for user in [mock_user1, mock_user2]:
-                yield user
-
-        # Configure the mock twitch.get_users method to return the mock TwitchUser objects
-        mock_twitch.get_users.return_value = mock_get_users(user_ids=['123', '456'])
-
-        # Call the function with the mock Twitch object and multiple user IDs
-        result = await streamer_get_names_from_ids(mock_twitch, ['123', '456'])
-
-        # Assert that the result is as expected
-        assert result == {'123': 'TestStreamer1', '456': 'TestStreamer2'}
-        mock_twitch.get_users.assert_called_once_with(user_ids=['123', '456'])
-
-    @pytest.mark.asyncio
-    async def test_streamer_get_names_from_ids_exception(self, mocker):
-        # Create a mock Twitch object
-        mock_twitch = mocker.Mock(spec=Twitch)
-
-        # Configure the mock twitch.get_users method to raise a TwitchAPIException
-        mock_twitch.get_users.side_effect = TwitchAPIException('API error')
-
-        # Call the function with the mock Twitch object and a list of IDs
-        ids = ['123', '456']
-        result = await streamer_get_names_from_ids(mock_twitch, ids)
-
-        # Assert that the result is an empty dict when an exception is raised
-        assert result == {}
-        mock_twitch.get_users.assert_called_once_with(user_ids=ids)
+from bot.models import GetUsersStreamer
 
 
 class TestStreamerGetIdsFromLogins:
 
-    #  Returns a list of user ids when given a list of valid broadcaster logins
+    #  Returns a list of GetUsersStreamers when given a list of valid broadcaster logins
     @pytest.mark.asyncio
     async def test_valid_broadcaster_logins(self, mocker):
         # Mock Twitch API response
         mock_twitch = mocker.Mock(spec=Twitch)
-        mock_user1 = mocker.Mock(spec=TwitchUser, id='123')
-        mock_user2 = mocker.Mock(spec=TwitchUser, id='456')
-        mock_user3 = mocker.Mock(spec=TwitchUser, id='789')
+        mock_user1 = mocker.Mock(spec=TwitchUser, id='123', display_name='Broadcaster1')
+        mock_user2 = mocker.Mock(spec=TwitchUser, id='456', display_name='Broadcaster2')
+        mock_user3 = mocker.Mock(spec=TwitchUser, id='789', display_name='Broadcaster3')
+        mock_logins = ['broadcaster1', 'broadcaster2', 'broadcaster3']
 
         async def mock_get_users(user_ids=None, logins=None) -> AsyncGenerator[TwitchUser, None]:
             for user in [mock_user1, mock_user2, mock_user3]:
                 yield user
 
-        mock_twitch.get_users.return_value = mock_get_users(logins=['broadcaster1', 'broadcaster2', 'broadcaster3'])
+        mock_twitch.get_users.return_value = mock_get_users(logins=mock_logins)
 
         # Call the function under test
-        result = await streamer_get_ids_from_logins(mock_twitch, ['broadcaster1', 'broadcaster2', 'broadcaster3'])
+        result = await streamer_get_ids_names_from_logins(mock_twitch, mock_logins)
 
         # Assert the result
-        assert result == ['123', '456', '789']
-        mock_twitch.get_users.assert_called_once_with(logins=['broadcaster1', 'broadcaster2', 'broadcaster3'])
+        assert result == [
+            GetUsersStreamer(id='123', name='Broadcaster1'),
+            GetUsersStreamer(id='456', name='Broadcaster2'),
+            GetUsersStreamer(id='789', name='Broadcaster3')
+        ]
+        mock_twitch.get_users.assert_called_once_with(logins=mock_logins)
 
     #  Returns an empty list when given a list of invalid broadcaster logins
     @pytest.mark.asyncio
@@ -96,13 +44,14 @@ class TestStreamerGetIdsFromLogins:
         mock_twitch = mocker.Mock(spec=Twitch)
         # Configure the mock twitch.get_users method to raise a TwitchAPIException
         mock_twitch.get_users.side_effect = TwitchAPIException('API error')
+        mock_invalid_logins = ['invalid1', 'invalid2', 'invalid3']
 
         # Call the function under test
-        result = await streamer_get_ids_from_logins(mock_twitch, ['invalid1', 'invalid2', 'invalid3'])
+        result = await streamer_get_ids_names_from_logins(mock_twitch, mock_invalid_logins)
 
         # Assert the result
         assert result == []
-        mock_twitch.get_users.assert_called_once_with(logins=['invalid1', 'invalid2', 'invalid3'])
+        mock_twitch.get_users.assert_called_once_with(logins=mock_invalid_logins)
 
     #  Returns an empty list when given a single invalid broadcaster login
     @pytest.mark.asyncio
@@ -111,57 +60,88 @@ class TestStreamerGetIdsFromLogins:
         mock_twitch = mocker.Mock()
         # Configure the mock twitch.get_users method to raise a TwitchAPIException
         mock_twitch.get_users.side_effect = TwitchAPIException('API error')
+        mock_invalid_login = ['invalid']
 
         # Call the function under test
-        result = await streamer_get_ids_from_logins(mock_twitch, ['invalid'])
+        result = await streamer_get_ids_names_from_logins(mock_twitch, mock_invalid_login)
 
         # Assert the result
         assert result == []
-        mock_twitch.get_users.assert_called_once_with(logins=['invalid'])
+        mock_twitch.get_users.assert_called_once_with(logins=mock_invalid_login)
 
-    #  Returns a list of user ids when given a single valid broadcaster login
+    #  Returns a list of GetUsersStreamers when given a single valid broadcaster login
     @pytest.mark.asyncio
     async def test_single_valid_broadcaster_login(self, mocker):
         # Mock Twitch API response
         mock_twitch = mocker.Mock(spec=Twitch)
-        mock_user = mocker.Mock(spec=TwitchUser, id='123456789')
+        mock_user = mocker.Mock(spec=TwitchUser, id='123456789', display_name='Broadcaster')
+        mock_login = ['broadcaster']
 
         async def mock_get_users(user_ids=None, logins=None) -> AsyncGenerator[TwitchUser, None]:
             yield mock_user
 
-        mock_twitch.get_users.return_value = mock_get_users(logins=['broadcaster'])
+        mock_twitch.get_users.return_value = mock_get_users(logins=mock_login)
 
         # Call the function under test
-        result = await streamer_get_ids_from_logins(mock_twitch, ['broadcaster'])
+        result = await streamer_get_ids_names_from_logins(mock_twitch, mock_login)
 
         # Assert the result
-        assert result == ['123456789']
-        mock_twitch.get_users.assert_called_once_with(logins=['broadcaster'])
+        assert result == [
+            GetUsersStreamer(id='123456789', name='Broadcaster')
+        ]
+        mock_twitch.get_users.assert_called_once_with(logins=mock_login)
 
 
 class TestValidateStreamerIds:
 
-    #  The function returns a list of user ids when given a valid list of user ids.
+    #  The function returns a list of GetUsersStreamers when given a valid list of user ids.
     @pytest.mark.asyncio
     async def test_valid_user_ids(self, mocker):
         # Mock the Twitch API response
         mock_twitch = mocker.Mock(spec=Twitch)
-        mock_user1 = mocker.Mock(spec=TwitchUser, id='123')
-        mock_user2 = mocker.Mock(spec=TwitchUser, id='456')
-        mock_user3 = mocker.Mock(spec=TwitchUser, id='789')
+        mock_user1 = mocker.Mock(spec=TwitchUser, id='123', display_name='Streamer1')
+        mock_user2 = mocker.Mock(spec=TwitchUser, id='456', display_name='Streamer2')
+        mock_user3 = mocker.Mock(spec=TwitchUser, id='789', display_name='Streamer3')
+        mock_ids = ['123', '456', '789']
 
         async def mock_get_users(user_ids=None, logins=None) -> AsyncGenerator[TwitchUser, None]:
             for user in [mock_user1, mock_user2, mock_user3]:
                 yield user
 
-        mock_twitch.get_users.return_value = mock_get_users(user_ids=['123', '456', '789'])
+        mock_twitch.get_users.return_value = mock_get_users(user_ids=mock_ids)
 
         # Call the function under test
-        result = await validate_streamer_ids(mock_twitch, ['123', '456', '789'])
+        result = await validate_streamer_ids_get_names(mock_twitch, mock_ids)
 
         # Assert the result
-        assert result == ['123', '456', '789']
-        mock_twitch.get_users.assert_called_once_with(user_ids=['123', '456', '789'])
+        assert result == [
+            GetUsersStreamer(id='123', name='Streamer1'),
+            GetUsersStreamer(id='456', name='Streamer2'),
+            GetUsersStreamer(id='789', name='Streamer3')
+        ]
+        mock_twitch.get_users.assert_called_once_with(user_ids=mock_ids)
+
+    # The function returns a list of a single GetUsersStreamer when given a list of a single valid id
+    @pytest.mark.asyncio
+    async def test_valid_user_id(self, mocker):
+        # Mock the Twitch API response
+        mock_twitch = mocker.Mock(spec=Twitch)
+        mock_user = mocker.Mock(spec=TwitchUser, id='123', display_name='Streamer1')
+        mock_id = ['123']
+
+        async def mock_get_users(user_ids=None, logins=None) -> AsyncGenerator[TwitchUser, None]:
+            yield mock_user
+
+        mock_twitch.get_users.return_value = mock_get_users(user_ids=mock_id)
+
+        # Call the function under test
+        result = await validate_streamer_ids_get_names(mock_twitch, mock_id)
+
+        # Assert the result
+        assert result == [
+            GetUsersStreamer(id='123', name='Streamer1'),
+        ]
+        mock_twitch.get_users.assert_called_once_with(user_ids=mock_id)
 
     #  The function returns an empty list when given a list of invalid user ids.
     @pytest.mark.asyncio
@@ -172,7 +152,7 @@ class TestValidateStreamerIds:
 
         # Call the function under test
         ids = ['42069', '1488']
-        result = await validate_streamer_ids(mock_twitch, ids)
+        result = await validate_streamer_ids_get_names(mock_twitch, ids)
 
         # Assert the result
         assert result == []
@@ -189,7 +169,7 @@ class TestValidateStreamerIds:
         ids = ['333', '666']
 
         # Call the function with a list of valid and invalid ids
-        result = await validate_streamer_ids(mock_twitch, ids)
+        result = await validate_streamer_ids_get_names(mock_twitch, ids)
 
         # Assert that the result is a list of user ids
         assert result == []

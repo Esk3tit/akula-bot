@@ -31,15 +31,7 @@ def get_first_text_channel(guild: discord.Guild) -> discord.TextChannel | None:
     return None
 
 
-async def streamer_get_names_from_ids(twitch: Twitch, ids: list[str]):
-    try:
-        return {user.id: user.display_name async for user in twitch.get_users(user_ids=ids)}
-    except TwitchAPIException as e:
-        print(e)
-        return {}
-
-
-async def streamer_get_ids_from_logins(twitch: Twitch, broadcaster_logins: list[str]) -> list[GetUsersStreamer]:
+async def streamer_get_ids_names_from_logins(twitch: Twitch, broadcaster_logins: list[str]) -> list[GetUsersStreamer]:
     try:
         return [GetUsersStreamer(user.id, user.display_name) async for user in twitch.get_users(logins=broadcaster_logins)]
     except TwitchAPIException as e:
@@ -47,7 +39,7 @@ async def streamer_get_ids_from_logins(twitch: Twitch, broadcaster_logins: list[
         return []
 
 
-async def validate_streamer_ids(twitch: Twitch, ids: list[str]) -> list[GetUsersStreamer]:
+async def validate_streamer_ids_get_names(twitch: Twitch, ids: list[str]) -> list[GetUsersStreamer]:
     try:
         return [GetUsersStreamer(user.id, user.display_name) async for user in twitch.get_users(user_ids=ids)]
     except TwitchAPIException as e:
