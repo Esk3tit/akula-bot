@@ -14,8 +14,7 @@ from dotenv import load_dotenv
 from twitchAPI.eventsub.webhook import EventSubWebhook
 
 from bot.bot_ui import ConfigView, create_streamsnipe_draft_embed, create_config_embed
-from bot.bot_utils import is_owner, get_first_text_channel, validate_streamer_ids_get_names, streamer_get_ids_names_from_logins, \
-    streamer_get_names_from_ids, is_owner_or_optin_mode
+from bot.bot_utils import is_owner, get_first_text_channel, validate_streamer_ids_get_names, streamer_get_ids_names_from_logins, is_owner_or_optin_mode
 from bot.models import Base, Guild, UserSubscription, Streamer
 
 # Load dotenv if on local env (check for prod only env var)
