@@ -194,23 +194,20 @@ async def on_guild_remove(guild):
 async def notify(ctx, *streamers):
     if webhook_obj is None:
         raise ValueError('Global reference not initialized...')
+    clean_streamers = await parse_streamers_from_command(streamers)
+    if not clean_streamers:
+        return await ctx.send(
+            f'{ctx.author.mention} Unable to find one of the given streamer(s), please try again... MAGGOT!')
     with Session(engine) as session:
-        # Check if we are in global or passive notif mode,
-        # only server owner can use command
-
         # Check if we need to insert streamer into streamer table
         # (if it is first time streamer is ever being watched)
         # Commit before try catch to avoid foreign key constraint
         # Needs to exist in streamer table before insert into user sub
-        clean_streamers = await parse_streamers_from_command(streamers)
-        if not clean_streamers:
-            return await ctx.send(f'{ctx.author.mention} Unable to find one of the given streamer(s), please try again... MAGGOT!')
-        # id_to_name = await streamer_get_names_from_ids(twitch_obj, clean_streamers)
-        for s_dict in clean_streamers:
-            streamer = session.scalar(select(Streamer).where(Streamer.streamer_id == s_dict['id']))
+        for s in clean_streamers:
+            streamer = session.scalar(select(Streamer).where(Streamer.streamer_id == s.id))
             if not streamer:
-                topic = await webhook_obj.listen_stream_online(s_dict['id'], on_stream_online)
-                new_streamer = Streamer(streamer_id=s_dict['id'], streamer_name=s_dict['name'], topic_sub_id=topic)
+                topic = await webhook_obj.listen_stream_online(s.id, on_stream_online)
+                new_streamer = Streamer(streamer_id=s.id, streamer_name=s.name, topic_sub_id=topic)
                 session.add(new_streamer)
         session.commit()
 
@@ -223,15 +220,13 @@ async def notify(ctx, *streamers):
                     {
                         "user_id": str(ctx.author.id),
                         "guild_id": str(ctx.guild.id),
-                        "streamer_id": s
+                        "streamer_id": s.id
                     } for s in clean_streamers
                 ]
             )
             session.commit()
-            await ctx.send(f'{ctx.author.mention} will now be notified of when the following streamers are live!')
-            await ctx.send(f'`{", ".join([s_dict["name"] for s_dict in clean_streamers])}`')
-        except IntegrityError as e:
-            print("Dupe notify", e)
+            await ctx.send(f'{ctx.author.mention} will now be notified of when the following streamers are live: `{", ".join([s.name for s in clean_streamers])}`')
+        except IntegrityError:
             session.rollback()
             await ctx.send(
                 f'{ctx.author.mention} you are already subscribed to some or all of the streamer(s)! Reverting...'
@@ -239,9 +234,10 @@ async def notify(ctx, *streamers):
 
 
 @notify.error
-async def notify_error(ctx, _):
+async def notify_error(ctx, error):
+    print(error)
     await ctx.send(
-        f"{ctx.author.mention} You don't have permission to use this command... (server notification mode not optin)",
+        f"{ctx.author.mention} You don't have permission to use this command...",
         ephemeral=True
     )
 
@@ -253,17 +249,17 @@ async def unnotify(ctx, *streamers):
         raise ValueError('Global reference not initialized...')
     success = []
     fail = []
-    with Session(engine) as session:
-        clean_streamers = await parse_streamers_from_command(streamers)
-        if not clean_streamers:
-            return await ctx.send(f'{ctx.author.mention} Unable to find given streamer, please try again... MAGGOT!')
+    clean_streamers = await parse_streamers_from_command(streamers)
+    if not clean_streamers:
+        return await ctx.send(f'{ctx.author.mention} Unable to find given streamer, please try again... MAGGOT!')
 
+    with Session(engine) as session:
         for original_arg, s in zip(streamers, clean_streamers):
             user_sub = session.scalar(
                 select(UserSubscription).join(UserSubscription.streamer).where(
                     UserSubscription.user_id == str(ctx.author.id),
                     UserSubscription.guild_id == str(ctx.guild.id),
-                    Streamer.streamer_id == s
+                    Streamer.streamer_id == s.id
                 )
             )
             if user_sub:
@@ -274,9 +270,9 @@ async def unnotify(ctx, *streamers):
                 # Can just check for existence of one (first) record, don't need to query all records if
                 # there is at least one record
                 streamer_refs = session.scalars(
-                    select(UserSubscription).where(UserSubscription.streamer_id == s)).first()
+                    select(UserSubscription).where(UserSubscription.streamer_id == s.id)).first()
                 if not streamer_refs:
-                    streamer = session.scalar(select(Streamer).where(Streamer.streamer_id == s))
+                    streamer = session.scalar(select(Streamer).where(Streamer.streamer_id == s.id))
                     status = await webhook_obj.unsubscribe_topic(streamer.topic_sub_id)
                     print(f'unsubbing topic {streamer.topic_sub_id} from streamer {streamer.streamer_name}')
                     if not status:
@@ -288,15 +284,16 @@ async def unnotify(ctx, *streamers):
         session.commit()
 
     if success:
-        await ctx.send(f'{ctx.author.mention} You will no longer be notified for: {", ".join(success)}!')
+        await ctx.send(f'{ctx.author.mention} You will no longer be notified for: `{", ".join(success)}`!')
     if fail:
-        await ctx.send(f'{ctx.author.mention} Unable to unsubscribe from: {", ".join(fail)}!')
+        await ctx.send(f'{ctx.author.mention} Unable to unsubscribe from: `{", ".join(fail)}`!')
 
 
 @unnotify.error
-async def unnotify_error(ctx, _):
+async def unnotify_error(ctx, error):
+    print(error)
     await ctx.send(
-        f"{ctx.author.mention} You don't have permission to use this command... (server notification mode not optin)",
+        f"{ctx.author.mention} You don't have permission to use this command...",
         ephemeral=True
     )
 

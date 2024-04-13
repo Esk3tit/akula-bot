@@ -1,7 +1,17 @@
 from typing import List
+from dataclasses import dataclass
 
 from sqlalchemy import UniqueConstraint, ForeignKey
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
+
+
+@dataclass(frozen=True)
+class GetUsersStreamer:
+    id: str
+    name: str
+
+    def __hash__(self):
+        return hash((self.id, self.name))
 
 
 class Base(DeclarativeBase):

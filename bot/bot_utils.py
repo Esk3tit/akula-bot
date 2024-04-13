@@ -1,3 +1,5 @@
+from typing import List, Any
+
 import discord
 from discord.ext import commands
 from discord.ext.commands import Context
@@ -5,7 +7,7 @@ from twitchAPI.twitch import Twitch
 from twitchAPI.type import TwitchAPIException
 from sqlalchemy import select, Engine
 from sqlalchemy.orm import Session
-from bot.models import Guild
+from bot.models import Guild, GetUsersStreamer
 
 
 def is_owner_or_optin_mode(engine: Engine):
@@ -37,17 +39,17 @@ async def streamer_get_names_from_ids(twitch: Twitch, ids: list[str]):
         return {}
 
 
-async def streamer_get_ids_from_logins(twitch: Twitch, broadcaster_logins: list[str]) -> list[dict]:
+async def streamer_get_ids_from_logins(twitch: Twitch, broadcaster_logins: list[str]) -> list[GetUsersStreamer]:
     try:
-        return [{"id": user.id, "name": user.display_name} async for user in twitch.get_users(logins=broadcaster_logins)]
+        return [GetUsersStreamer(user.id, user.display_name) async for user in twitch.get_users(logins=broadcaster_logins)]
     except TwitchAPIException as e:
         print(e)
         return []
 
 
-async def validate_streamer_ids(twitch: Twitch, ids: list[str]) -> list[dict]:
+async def validate_streamer_ids(twitch: Twitch, ids: list[str]) -> list[GetUsersStreamer]:
     try:
-        return [{"id": user.id, "name": user.display_name} async for user in twitch.get_users(user_ids=ids)]
+        return [GetUsersStreamer(user.id, user.display_name) async for user in twitch.get_users(user_ids=ids)]
     except TwitchAPIException as e:
         print(e)
         return []
