@@ -1,9 +1,10 @@
-from bot.bot_utils import validate_streamer_ids_get_names, streamer_get_ids_names_from_logins
+from bot.bot_utils import validate_streamer_ids_get_names, streamer_get_ids_names_from_logins, get_first_sendable_text_channel, is_owner
 from twitchAPI.twitch import Twitch
 from twitchAPI.type import TwitchAPIException
 from twitchAPI.object.api import TwitchUser
 from typing import AsyncGenerator
 import pytest
+import discord
 
 from bot.models import GetUsersStreamer
 
@@ -176,3 +177,92 @@ class TestValidateStreamerIds:
 
         # Assert that get_users was called with the correct arguments
         mock_twitch.get_users.assert_called_once_with(user_ids=ids)
+
+
+class TestGetFirstTextChannel:
+
+    #  Returns the first text channel in the guild that the bot has permission to send messages to.
+    def test_returns_first_text_channel(self, mocker):
+        guild = mocker.Mock(spec=discord.Guild)
+        channel1 = mocker.Mock(spec=discord.TextChannel)
+        channel2 = mocker.Mock(spec=discord.TextChannel)
+        channel3 = mocker.Mock(spec=discord.TextChannel)
+        guild.text_channels = [channel1, channel2, channel3]
+        channel1.permissions_for.return_value.send_messages = False
+        channel2.permissions_for.return_value.send_messages = True
+        channel3.permissions_for.return_value.send_messages = True
+
+        result = get_first_sendable_text_channel(guild)
+
+        assert result == channel2
+
+    #  Returns None if the guild has no text channels.
+    def test_returns_none_if_no_text_channels(self, mocker):
+        guild = mocker.Mock(spec=discord.Guild)
+        guild.text_channels = []
+
+        result = get_first_sendable_text_channel(guild)
+
+        assert result is None
+
+    #  Returns None if the bot does not have permission to send messages in any text channel.
+    def test_bot_without_permission(self, mocker):
+        guild = mocker.Mock(spec=discord.Guild)
+        text_channel1 = mocker.Mock(spec=discord.TextChannel)
+        text_channel2 = mocker.Mock(spec=discord.TextChannel)
+        text_channel3 = mocker.Mock(spec=discord.TextChannel)
+        guild.text_channels = [text_channel1, text_channel2, text_channel3]
+
+        text_channel1.permissions_for.return_value.send_messages = False
+        text_channel2.permissions_for.return_value.send_messages = False
+        text_channel3.permissions_for.return_value.send_messages = False
+
+        result = get_first_sendable_text_channel(guild)
+
+        assert result is None
+
+
+class TestIsOwner:
+
+    #  Returns True if the interaction user is the guild owner.
+    def test_returns_true_if_interaction_user_is_guild_owner(self, mocker):
+        interaction = mocker.Mock(spec=discord.Interaction)
+        interaction.user.id = 123
+        interaction.guild.owner.id = 123
+
+        result = is_owner(interaction)
+        assert result is True
+
+    #  Returns False if the interaction user is not the guild owner.
+    def test_returns_false_if_interaction_user_is_not_guild_owner(self, mocker):
+        interaction = mocker.Mock(spec=discord.Interaction)
+        interaction.user.id = 123
+        interaction.guild.owner.id = 456
+
+        result = is_owner(interaction)
+        assert result is False
+
+    #  Returns False if the interaction user is None.
+    def test_returns_false_if_interaction_user_is_none(self, mocker):
+        interaction = mocker.Mock(spec=discord.Interaction)
+        interaction.user = None
+
+        result = is_owner(interaction)
+        assert result is False
+
+    #  Returns False if the guild is None.
+    def test_returns_false_if_guild_is_none(self, mocker):
+        interaction = mocker.Mock(spec=discord.Interaction)
+        interaction.guild = None
+
+        result = is_owner(interaction)
+        assert result is False
+
+    #  Returns False if the guild owner is None.
+    def test_returns_false_if_guild_owner_is_none(self, mocker):
+        interaction = mocker.Mock(spec=discord.Interaction)
+        interaction.guild.owner = None
+
+        result = is_owner(interaction)
+        assert result is False
+

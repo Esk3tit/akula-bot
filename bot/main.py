@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from twitchAPI.eventsub.webhook import EventSubWebhook
 
 from bot.bot_ui import ConfigView, create_streamsnipe_draft_embed, create_config_embed
-from bot.bot_utils import is_owner, get_first_text_channel, validate_streamer_ids_get_names, streamer_get_ids_names_from_logins, is_owner_or_optin_mode
+from bot.bot_utils import is_owner, get_first_sendable_text_channel, validate_streamer_ids_get_names, streamer_get_ids_names_from_logins, is_owner_or_optin_mode
 from bot.models import Base, Guild, UserSubscription, Streamer
 
 # Load dotenv if on local env (check for prod only env var)
@@ -139,7 +139,7 @@ async def parse_streamers_from_command(streamers):
 async def on_guild_join(guild: discord.Guild):
     # Send message to first available text channel (top to bottom)
     # to configure, if no permission channel then send DM to owner
-    channel = get_first_text_channel(guild)
+    channel = get_first_sendable_text_channel(guild)
     if channel is None:
         try:
             await guild.owner.send("Error: Bot has no channel that it has permission to post in.")
@@ -340,7 +340,7 @@ async def changeconfig(ctx):
     await view.wait()
 
     # Write to DB here after getting values from view
-    channel = get_first_text_channel(ctx.guild)
+    channel = get_first_sendable_text_channel(ctx.guild)
     with Session(engine) as session:
         session.execute(
             update(Guild).
