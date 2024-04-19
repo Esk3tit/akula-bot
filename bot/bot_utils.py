@@ -15,7 +15,7 @@ def is_owner_or_optin_mode(engine: Engine):
         with Session(engine) as session:
             guild_notif_mode = session.scalar(
                 select(Guild.notification_mode).where(Guild.guild_id == str(ctx.guild.id)))
-            return guild_notif_mode == 'optin' or ctx.author.id == ctx.guild.owner.id
+            return guild_notif_mode.lower() == 'optin' or ctx.author.id == ctx.guild.owner.id
     return commands.check(predicate)
 
 

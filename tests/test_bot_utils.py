@@ -1,4 +1,9 @@
-from bot.bot_utils import validate_streamer_ids_get_names, streamer_get_ids_names_from_logins, get_first_sendable_text_channel, is_owner
+from sqlalchemy import Engine
+from sqlalchemy.orm import Session
+from discord.ext.commands import Context
+from unittest.mock import MagicMock
+from bot.bot_utils import validate_streamer_ids_get_names, streamer_get_ids_names_from_logins, \
+    get_first_sendable_text_channel, is_owner, is_owner_or_optin_mode
 from twitchAPI.twitch import Twitch
 from twitchAPI.type import TwitchAPIException
 from twitchAPI.object.api import TwitchUser
@@ -266,3 +271,73 @@ class TestIsOwner:
         result = is_owner(interaction)
         assert result is False
 
+
+class TestIsOwnerOrOptinMode:
+    @pytest.fixture
+    def ctx_mock(self, mocker):
+        ctx = mocker.Mock(spec=Context)
+        ctx.guild.id = 123
+        ctx.author.id = 456
+        ctx.guild.owner.id = 789
+        return ctx
+
+    @pytest.fixture
+    def session_mock(self, mocker):
+        session = mocker.MagicMock(spec=Session)
+        mocker.patch('bot.bot_utils.Session', return_value=session)
+        return session
+
+    @pytest.fixture
+    def engine_mock(self, mocker):
+        engine = mocker.MagicMock(spec=Engine)
+        return engine
+
+    # returns True if guild notification mode is 'optin' and author is not guild owner
+    @pytest.mark.asyncio
+    async def test_optin_mode_not_owner(self, ctx_mock, session_mock, engine_mock):
+        session_mock.__enter__.return_value = session_mock
+        session_mock.__exit__.return_value = None
+        session_mock.scalar.return_value = 'optin'
+
+        check_function = is_owner_or_optin_mode(engine_mock).predicate
+        result = await check_function(ctx_mock)
+
+        assert result is True
+
+    # returns True if guild notification mode is not 'optin' and author is guild owner
+    @pytest.mark.asyncio
+    async def test_global_mode_and_author_is_owner(self, ctx_mock, session_mock, engine_mock):
+        session_mock.__enter__.return_value = session_mock
+        session_mock.__exit__.return_value = None
+        session_mock.scalar.return_value = 'global'
+        ctx_mock.author.id = ctx_mock.guild.owner.id
+
+        check_function = is_owner_or_optin_mode(engine_mock).predicate
+        result = await check_function(ctx_mock)
+
+        assert result is True
+
+    # returns False if guild notification mode is not 'optin' and author is not guild owner
+    @pytest.mark.asyncio
+    async def test_returns_false_if_not_optin_and_not_owner(self, ctx_mock, session_mock, engine_mock):
+        session_mock.__enter__.return_value = session_mock
+        session_mock.__exit__.return_value = None
+        session_mock.scalar.return_value = 'passive'
+
+        check_function = is_owner_or_optin_mode(engine_mock).predicate
+        result = await check_function(ctx_mock)
+
+        assert result is False
+
+    # returns True if guild notification mode is 'optin' and author is guild owner
+    @pytest.mark.asyncio
+    async def test_optin_mode_and_owner(self, ctx_mock, session_mock, engine_mock):
+        session_mock.__enter__.return_value = session_mock
+        session_mock.__exit__.return_value = None
+        session_mock.scalar.return_value = 'optin'
+        ctx_mock.author.id = ctx_mock.guild.owner.id
+
+        check_function = is_owner_or_optin_mode(engine_mock).predicate
+        result = await check_function(ctx_mock)
+
+        assert result is True
