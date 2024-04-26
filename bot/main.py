@@ -1,6 +1,7 @@
 import asyncio
 import os
 import re
+import random
 
 import discord
 from discord import app_commands
@@ -8,12 +9,14 @@ from sqlalchemy import create_engine, select, delete, insert, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from discord.ext import commands
-from twitchAPI.object.eventsub import StreamOnlineEvent
+from twitchAPI.object.eventsub import StreamOnlineEvent, StreamOnlineData
 from twitchAPI.twitch import Twitch
 from dotenv import load_dotenv
 from twitchAPI.eventsub.webhook import EventSubWebhook
 
-from bot.bot_ui import ConfigView, create_streamsnipe_draft_embed, create_config_embed
+from bot.bot_ui import ConfigView, create_config_embed, EmbedCreationContext
+from bot.embed_strategies.draft import DraftEmbedStrategy
+from bot.embed_strategies.isis import IsisEmbedStrategy
 from bot.bot_utils import is_owner, get_first_sendable_text_channel, validate_streamer_ids_get_names, streamer_get_ids_names_from_logins, is_owner_or_optin_mode
 from bot.models import Base, Guild, UserSubscription, Streamer
 
@@ -41,7 +44,13 @@ webhook_obj: EventSubWebhook | None = None
 
 
 async def on_stream_online(data: StreamOnlineEvent):
-    embed = create_streamsnipe_draft_embed(data, bot.user.name, bot.user.avatar)
+    embed_strategies = [
+        DraftEmbedStrategy(),
+        IsisEmbedStrategy()
+    ]
+    selected_embed_strategy = random.choice(embed_strategies)
+    context = EmbedCreationContext(selected_embed_strategy)
+    embed = context.create_embed(data, bot.user.name, bot.user.avatar)
 
     async def send_messages():
         # Fetch data on all the servers and users we need to notify for this streamer
@@ -358,14 +367,15 @@ async def changeconfig_error(ctx, error):
     await ctx.send(f"You do not have permission to use this command!, {error}", ephemeral=True)
 
 
-# @bot.hybrid_command(name='test', description='for testing code when executed')
-# async def test(ctx):
-#     with Session(engine) as session:
-#         streamer_ids = session.scalars(select(Streamer.streamer_id)).all()
-#         async for user in twitch_obj.get_users(user_ids=streamer_ids):
-#             streamer = session.scalar(select(Streamer))
-#             streamer.streamer_name = user.display_name
-#         session.commit()
+@bot.hybrid_command(name='test', description='for testing code when executed')
+async def test(ctx):
+    test_data = StreamOnlineEvent()
+    test_data.event = StreamOnlineData()
+    test_data.event.broadcaster_user_name = "Test"
+    test_data.event.started_at = "2021-02-02"
+    test_data.event.broadcaster_user_login = "test"
+    embed = create_isis_draft_embed(test_data, bot.user.name, bot.user.avatar)
+    await ctx.send(embed=embed)
 
 
 @bot.event

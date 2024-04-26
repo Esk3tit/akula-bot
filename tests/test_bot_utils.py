@@ -1,7 +1,6 @@
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 from discord.ext.commands import Context
-from unittest.mock import MagicMock
 from bot.bot_utils import validate_streamer_ids_get_names, streamer_get_ids_names_from_logins, \
     get_first_sendable_text_channel, is_owner, is_owner_or_optin_mode
 from twitchAPI.twitch import Twitch
