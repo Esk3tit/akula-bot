@@ -3,9 +3,11 @@ from unittest.mock import AsyncMock
 
 import discord
 import pytest
-from sqlalchemy import delete, select
+from discord.ext import commands
+from sqlalchemy import select
 
-from bot.main import parse_streamers_from_command, on_guild_remove
+from bot.bot_ui import ConfigView
+from bot.main import parse_streamers_from_command, on_guild_remove, on_guild_join
 from twitchAPI.twitch import Twitch
 
 from bot.models import Guild, UserSubscription, Streamer
@@ -271,3 +273,96 @@ class TestOnGuildRemove:
         asyncio.run(on_guild_remove(guild))
         assert test_session.scalar(select(Streamer).where(Streamer.streamer_id == '433451304')) is not None
         assert test_session.scalar(select(Streamer).where(Streamer.streamer_id == '162656602')) is not None
+
+
+class TestOnGuildJoin:
+    @pytest.mark.asyncio
+    async def test_on_guild_join_creates_guild(self, mocker, test_session):
+        guild = mocker.MagicMock(spec=discord.Guild)
+        guild.id = 1234567890
+        guild.owner = mocker.MagicMock(spec=discord.Member)
+        guild.owner.display_name = "Guild Owner"
+        guild.owner.display_avatar = "owner_avatar_url"
+
+        bot_user = mocker.MagicMock(spec=discord.ClientUser)
+        bot_user.display_name = "Bot"
+        bot_user.display_avatar = "bot_avatar_url"
+
+        bot_instance = mocker.MagicMock(spec=commands.Bot)
+        bot_instance.user = bot_user
+
+        channel = mocker.MagicMock(spec=discord.TextChannel)
+        channel.id = 9876543210
+
+        config_button = mocker.MagicMock(spec=ConfigView)
+        config_button.channel = channel
+        config_button.notification_mode = "optin"
+
+        mocker.patch('bot.main.bot', new=bot_instance)
+        mocker.patch('bot.main.get_first_sendable_text_channel', return_value=channel)
+        mocker.patch('bot.main.ConfigView', return_value=config_button)
+        mocker.patch('bot.main.Session', return_value=test_session)
+
+        await on_guild_join(guild)
+
+        assert test_session.scalar(select(Guild).where(Guild.guild_id == str(guild.id))) is not None
+
+    @pytest.mark.asyncio
+    async def test_on_guild_join_sends_embed_and_config_button(self, mocker):
+        guild = mocker.MagicMock(spec=discord.Guild)
+        guild.id = 1234567890
+        guild.owner = mocker.MagicMock(spec=discord.Member)
+        guild.owner.display_name = "Guild Owner"
+        guild.owner.display_avatar = "owner_avatar_url"
+
+        bot_user = mocker.MagicMock(spec=discord.ClientUser)
+        bot_user.display_name = "Bot"
+        bot_user.display_avatar = "bot_avatar_url"
+
+        bot_instance = mocker.MagicMock(spec=commands.Bot)
+        bot_instance.user = bot_user
+
+        channel = mocker.MagicMock(spec=discord.TextChannel)
+        channel.id = 9876543210
+
+        config_button = mocker.MagicMock(spec=ConfigView)
+        config_button.channel = channel
+        config_button.notification_mode = "global"
+
+        mocker.patch('bot.main.bot', new=bot_instance)
+        mocker.patch('bot.main.get_first_sendable_text_channel', return_value=channel)
+        mocker.patch('bot.main.ConfigView', return_value=config_button)
+        mocker.patch('bot.main.Session', return_value=mocker.MagicMock())
+
+        await on_guild_join(guild)
+
+        channel.send.assert_any_call(embed=mocker.ANY)
+        channel.send.assert_any_call(view=mocker.ANY)
+
+    @pytest.mark.asyncio
+    async def test_on_guild_join_sends_dm_to_owner_if_no_channel(self, mocker, capfd):
+        guild = mocker.MagicMock(spec=discord.Guild)
+        guild.id = 1234567890
+        guild.owner = mocker.MagicMock(spec=discord.Member)
+        guild.owner.display_name = "Guild Owner"
+        guild.owner.display_avatar = "owner_avatar_url"
+        mocker.patch('bot.main.get_first_sendable_text_channel', return_value=None)
+
+        await on_guild_join(guild)
+
+        out, err = capfd.readouterr()
+        guild.owner.send.assert_called_once_with("Error: Bot has no channel that it has permission to post in.")
+        assert "Message sent to the guild owner" in out
+
+    @pytest.mark.asyncio
+    async def test_on_guild_join_handles_dm_to_owner_exception(self, mocker, capfd):
+        guild = mocker.MagicMock(spec=discord.Guild)
+        guild.id = 1234567890
+        mocker.patch('bot.main.get_first_sendable_text_channel', return_value=None)
+        guild.owner.send = AsyncMock(side_effect=discord.HTTPException(response=mocker.MagicMock(), message="Test Exception"))
+
+        await on_guild_join(guild)
+
+        out, err = capfd.readouterr()
+        assert "Failed to send message to the guild owner" in out
+        assert "Test Exception" in out
