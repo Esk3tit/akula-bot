@@ -182,7 +182,7 @@ async def on_guild_join(guild: discord.Guild):
 
 
 @bot.event
-async def on_guild_remove(guild):
+async def on_guild_remove(guild: discord.Guild):
     # Remove guild from guilds DB, don't have objects of guild
     # so need to do it with Core/non-Unit of Work pattern
     with Session(engine) as session:
