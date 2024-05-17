@@ -7,16 +7,16 @@ from discord.ext import commands
 from sqlalchemy import select
 
 from bot.bot_ui import ConfigView
-from bot.main import parse_streamers_from_command, on_guild_remove, on_guild_join
+from bot.main import parse_streamers_from_command, on_guild_remove, on_guild_join, notifs
 from twitchAPI.twitch import Twitch
 
 from bot.models import Guild, UserSubscription, Streamer
 
 
+@pytest.mark.asyncio
 class TestParseStreamersFromCommand:
 
     #  Should return a list of streamer IDs when given a list of streamer IDs
-    @pytest.mark.asyncio
     async def test_parse_streamers_from_command_with_ids(self, mocker):
         # Mock the global twitch_obj
         mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
@@ -33,7 +33,6 @@ class TestParseStreamersFromCommand:
         mock_validate_streamer_ids_get_names.assert_called_once()
         assert sorted(mock_validate_streamer_ids_get_names.call_args[0][1]) == sorted(['123', '456', '789'])
 
-    @pytest.mark.asyncio
     async def test_parse_streamers_from_command_with_names(self, mocker):
         # Mock the global twitch_obj
         mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
@@ -50,7 +49,6 @@ class TestParseStreamersFromCommand:
         assert sorted(mock_streamer_get_ids_names_from_logins.call_args[0][1]) == sorted(['streamer1', 'streamer2', 'streamer3'])
         mock_validate_streamer_ids_get_names.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_parse_streamers_from_command_with_urls(self, mocker):
         # Mock the global twitch_obj
         mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
@@ -68,7 +66,6 @@ class TestParseStreamersFromCommand:
         mock_validate_streamer_ids_get_names.assert_not_called()
 
     # User gives no parameters to notify command which results in empty tuple
-    @pytest.mark.asyncio
     async def test_parse_streamers_from_command_with_no_parameters(self, mocker):
         # Mock the global twitch_obj
         mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
@@ -85,7 +82,6 @@ class TestParseStreamersFromCommand:
         mock_streamer_get_ids_names_from_logins.assert_not_called()
 
     #  Should return a list of streamer IDs when given a mix of streamer IDs, names, and URLs
-    @pytest.mark.asyncio
     async def test_parse_streamers_from_command_with_mixed_inputs(self, mocker):
         # Mock the global twitch_obj
         mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
@@ -104,7 +100,6 @@ class TestParseStreamersFromCommand:
         assert sorted(mock_validate_streamer_ids_get_names.call_args[0][1]) == sorted(['123'])
 
     #  Should return [] when given a list of streamer names that don't exist
-    @pytest.mark.asyncio
     async def test_parse_streamers_from_command_with_invalid_names(self, mocker):
         # Mock the global twitch_obj
         mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
@@ -122,7 +117,6 @@ class TestParseStreamersFromCommand:
         mock_validate_streamer_ids_get_names.assert_not_called()
 
     #  Should return [] when given a list with a non-existent streamer ID
-    @pytest.mark.asyncio
     async def test_parse_streamers_from_command_with_nonexistent_streamer_id(self, mocker):
         # Mock the global twitch_obj
         mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
@@ -143,7 +137,6 @@ class TestParseStreamersFromCommand:
         assert sorted(mock_validate_streamer_ids_get_names.call_args[0][1]) == sorted(streamers)
 
     #  Should return None when given a list with non-existent URLs or incorrect ones
-    @pytest.mark.asyncio
     async def test_parse_streamers_from_command_with_invalid_urls(self, mocker):
         # Mock the global twitch_obj
         mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
@@ -160,7 +153,6 @@ class TestParseStreamersFromCommand:
         assert sorted(mock_streamer_get_ids_names_from_logins.call_args[0][1]) == sorted(['https://invalid.com/streamer1', 'invalid_streamer2'])
         mock_validate_streamer_ids_get_names.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_parse_streamers_from_command_with_uninitialized_twitch_obj(self, mocker):
         # Mock the global twitch_obj as None
         mocker.patch('bot.main.twitch_obj', None)
@@ -176,7 +168,6 @@ class TestParseStreamersFromCommand:
         mock_validate_streamer_ids_get_names.assert_not_called()
         mock_streamer_get_ids_names_from_logins.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_parse_streamers_from_command_with_duplicate_ids(self, mocker):
         mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
 
@@ -192,7 +183,6 @@ class TestParseStreamersFromCommand:
         assert sorted(mock_validate_streamer_ids_get_names.call_args[0][1]) == sorted(['123', '456', '789'])
         mock_streamer_get_ids_names_from_logins.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_parse_streamers_from_command_with_duplicate_names(self, mocker):
         mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
 
@@ -209,7 +199,6 @@ class TestParseStreamersFromCommand:
             ['streamer1', 'streamer2', 'streamer3'])
         mock_validate_streamer_ids_get_names.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_parse_streamers_from_command_with_duplicate_urls(self, mocker):
         mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
 
@@ -225,7 +214,6 @@ class TestParseStreamersFromCommand:
         assert sorted(mock_streamer_get_ids_names_from_logins.call_args[0][1]) == sorted(['streamer1', 'streamer2'])
         mock_validate_streamer_ids_get_names.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_parse_streamers_from_command_with_mixed_duplicates(self, mocker):
         mocker.patch('bot.main.twitch_obj', mocker.MagicMock(spec=Twitch))
 
@@ -244,8 +232,9 @@ class TestParseStreamersFromCommand:
         assert sorted(mock_validate_streamer_ids_get_names.call_args[0][1]) == sorted(['123'])
 
 
+@pytest.mark.asyncio
 class TestOnGuildRemove:
-    @pytest.mark.asyncio
+
     def test_on_guild_remove_deletes_guild(self, mocker, test_session):
         guild = mocker.MagicMock(spec=discord.Guild)
         guild.id = 1076360773879738380
@@ -253,7 +242,6 @@ class TestOnGuildRemove:
         asyncio.run(on_guild_remove(guild))
         assert test_session.scalar(select(Guild).where(Guild.guild_id == str(guild.id))) is None
 
-    @pytest.mark.asyncio
     def test_on_guild_remove_cascade_deletes_user_subscriptions_and_streamers(self, mocker, test_session):
         guild = mocker.MagicMock(spec=discord.Guild)
         guild.id = 1076360773879738380
@@ -265,7 +253,6 @@ class TestOnGuildRemove:
         assert test_session.scalar(select(Streamer).where(Streamer.streamer_id == '8')) is None
         assert test_session.scalar(select(Streamer).where(Streamer.streamer_id == '9')) is None
 
-    @pytest.mark.asyncio
     def test_on_guild_streamer_still_subbed_not_deleted(self, mocker, test_session):
         guild = mocker.MagicMock(spec=discord.Guild)
         guild.id = 1076360773879738380
@@ -275,8 +262,9 @@ class TestOnGuildRemove:
         assert test_session.scalar(select(Streamer).where(Streamer.streamer_id == '162656602')) is not None
 
 
+@pytest.mark.asyncio
 class TestOnGuildJoin:
-    @pytest.mark.asyncio
+
     async def test_on_guild_join_creates_guild(self, mocker, test_session):
         guild = mocker.MagicMock(spec=discord.Guild)
         guild.id = 1234567890
@@ -307,7 +295,6 @@ class TestOnGuildJoin:
 
         assert test_session.scalar(select(Guild).where(Guild.guild_id == str(guild.id))) is not None
 
-    @pytest.mark.asyncio
     async def test_on_guild_join_sends_embed_and_config_button(self, mocker):
         guild = mocker.MagicMock(spec=discord.Guild)
         guild.id = 1234567890
@@ -339,7 +326,6 @@ class TestOnGuildJoin:
         channel.send.assert_any_call(embed=mocker.ANY)
         channel.send.assert_any_call(view=mocker.ANY)
 
-    @pytest.mark.asyncio
     async def test_on_guild_join_sends_dm_to_owner_if_no_channel(self, mocker, capfd):
         guild = mocker.MagicMock(spec=discord.Guild)
         guild.id = 1234567890
@@ -354,7 +340,6 @@ class TestOnGuildJoin:
         guild.owner.send.assert_called_once_with("Error: Bot has no channel that it has permission to post in.")
         assert "Message sent to the guild owner" in out
 
-    @pytest.mark.asyncio
     async def test_on_guild_join_handles_dm_to_owner_exception(self, mocker, capfd):
         guild = mocker.MagicMock(spec=discord.Guild)
         guild.id = 1234567890
@@ -366,3 +351,96 @@ class TestOnGuildJoin:
         out, err = capfd.readouterr()
         assert "Failed to send message to the guild owner" in out
         assert "Test Exception" in out
+
+
+@pytest.mark.asyncio
+class TestNotifsFunction:
+    async def test_notifs_with_subscriptions(self, mocker, test_session):
+        # Create test data in the database
+        streamer1 = Streamer(streamer_id='1', streamer_name='Streamer1', topic_sub_id='a')
+        streamer2 = Streamer(streamer_id='2', streamer_name='Streamer2', topic_sub_id='b')
+        test_session.add_all([streamer1, streamer2])
+        test_session.flush()
+
+        subscription1 = UserSubscription(
+            user_id='123', guild_id='1076360773879738380', streamer_id=streamer1.streamer_id
+        )
+        subscription2 = UserSubscription(
+            user_id='123', guild_id='1076360773879738380', streamer_id=streamer2.streamer_id
+        )
+        test_session.add_all([subscription1, subscription2])
+        test_session.commit()
+
+        # Verify that the test data is inserted into the database
+        assert test_session.query(Streamer).count() == 20
+        assert test_session.query(UserSubscription).count() == 29
+
+        ctx_mock = mocker.MagicMock(spec=discord.ext.commands.Context)
+        ctx_mock.author.id = 123
+        ctx_mock.guild.id = 1076360773879738380
+        ctx_mock.guild.name = 'TestGuild'
+
+        mocker.patch('bot.main.Session', return_value=test_session)
+
+        # Call the function
+        await notifs(ctx_mock)
+
+        # Check if the correct embed message is sent
+        ctx_mock.send.assert_called_once()
+        send_kwargs = ctx_mock.send.call_args.kwargs
+        print(ctx_mock.send.call_args.kwargs)
+        assert 'embed' in send_kwargs
+        embed = send_kwargs['embed']
+        assert isinstance(embed, discord.Embed)
+        assert embed.title == "Your Notification Subscriptions"
+        assert "Streamer1" in embed.fields[0].value
+        assert "Streamer2" in embed.fields[0].value
+
+    async def test_notifs_no_subscriptions(self, mocker, test_session):
+        ctx_mock = mocker.MagicMock(spec=discord.ext.commands.Context)
+        ctx_mock.author.id = 123
+        ctx_mock.guild.id = 1076360773879738380
+        ctx_mock.guild.name = 'TestGuild'
+
+        # Patch the Session in bot.main with the test_session
+        mocker.patch('bot.main.Session', return_value=test_session)
+
+        # Call the function
+        await notifs(ctx_mock)
+
+        # Check if the correct message is sent
+        ctx_mock.send.assert_called_once_with(
+            f'{ctx_mock.author.mention} You are not receiving notifications in {ctx_mock.guild.name}!'
+        )
+
+    async def test_notifs_exceeds_embed_limit(self, mocker, test_session):
+        # Create test data in the database
+        streamers = [Streamer(streamer_id=str(i), streamer_name=f'Streamer{i}', topic_sub_id=f'a{i}') for i in range(200, 401)]
+        test_session.add_all(streamers)
+        test_session.flush()
+
+        subscriptions = [UserSubscription(user_id='123', guild_id='1076360773879738380', streamer_id=streamer.streamer_id) for streamer
+                         in streamers]
+        test_session.add_all(subscriptions)
+        test_session.commit()
+
+        ctx_mock = mocker.MagicMock(spec=discord.ext.commands.Context)
+        ctx_mock.author.id = 123
+        ctx_mock.guild.id = 1076360773879738380
+        ctx_mock.guild.name = 'TestGuild'
+
+        # Patch the Session in bot.main with the test_session
+        mocker.patch('bot.main.Session', return_value=test_session)
+
+        # Call the function
+        await notifs(ctx_mock)
+
+        # Check if the correct embed message is sent
+        ctx_mock.send.assert_called_once()
+        send_kwargs = ctx_mock.send.call_args.kwargs
+        assert 'embed' in send_kwargs
+        embed = send_kwargs['embed']
+        assert isinstance(embed, discord.Embed)
+        assert len(embed.fields) == 1
+        assert embed.fields[0].name == "Subscribed Streamers"
+        assert embed.fields[0].value == "Too many subscriptions to display here!"
