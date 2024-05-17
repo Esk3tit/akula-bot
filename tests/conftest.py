@@ -1,6 +1,9 @@
 import os
+from unittest.mock import MagicMock
 
+import discord
 import pytest
+from discord.ext.commands import Context, Bot
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
@@ -38,7 +41,7 @@ def test_session(test_transaction, test_connection):
     session = sessionmaker(bind=test_connection)()
     session.begin_nested()
 
-    @event.listens_for(session, "after_transaction_end")
+    @event.listens_for(session, 'after_transaction_end')
     def restart_savepoint(_session, transaction):
         if transaction.nested and not transaction._parent.nested:
             _session.expire_all()
@@ -47,3 +50,26 @@ def test_session(test_transaction, test_connection):
     yield session
 
     session.close()
+
+
+@pytest.fixture(scope='function')
+def bot():
+    bot_user = MagicMock(spec=discord.ClientUser)
+    bot_user.display_name = 'Bot'
+    bot_user.display_avatar = 'bot_avatar_url'
+    bot_user.name = 'Bot'
+    bot_instance = MagicMock(spec=Bot)
+    bot_instance.user = bot_user
+    return bot_instance
+
+
+@pytest.fixture(scope='function')
+def ctx():
+    context = MagicMock(spec=Context)
+    context.guild.id = 1076360773879738380
+    context.guild.name = 'TestGuild'
+    context.author.id = 123
+    context.author.name = 'TestUser'
+    context.author.display_name = 'TestUser'
+    context.author.display_avatar = 'test_avatar_url'
+    return context

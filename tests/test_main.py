@@ -7,7 +7,7 @@ from discord.ext import commands
 from sqlalchemy import select
 
 from bot.bot_ui import ConfigView
-from bot.main import parse_streamers_from_command, on_guild_remove, on_guild_join, notifs
+from bot.main import parse_streamers_from_command, on_guild_remove, on_guild_join, notifs, changeconfig
 from twitchAPI.twitch import Twitch
 
 from bot.models import Guild, UserSubscription, Streamer
@@ -265,19 +265,12 @@ class TestOnGuildRemove:
 @pytest.mark.asyncio
 class TestOnGuildJoin:
 
-    async def test_on_guild_join_creates_guild(self, mocker, test_session):
+    async def test_on_guild_join_creates_guild(self, mocker, bot, test_session):
         guild = mocker.MagicMock(spec=discord.Guild)
         guild.id = 1234567890
         guild.owner = mocker.MagicMock(spec=discord.Member)
         guild.owner.display_name = "Guild Owner"
         guild.owner.display_avatar = "owner_avatar_url"
-
-        bot_user = mocker.MagicMock(spec=discord.ClientUser)
-        bot_user.display_name = "Bot"
-        bot_user.display_avatar = "bot_avatar_url"
-
-        bot_instance = mocker.MagicMock(spec=commands.Bot)
-        bot_instance.user = bot_user
 
         channel = mocker.MagicMock(spec=discord.TextChannel)
         channel.id = 9876543210
@@ -286,7 +279,7 @@ class TestOnGuildJoin:
         config_button.channel = channel
         config_button.notification_mode = "optin"
 
-        mocker.patch('bot.main.bot', new=bot_instance)
+        mocker.patch('bot.main.bot', new=bot)
         mocker.patch('bot.main.get_first_sendable_text_channel', return_value=channel)
         mocker.patch('bot.main.ConfigView', return_value=config_button)
         mocker.patch('bot.main.Session', return_value=test_session)
@@ -295,19 +288,12 @@ class TestOnGuildJoin:
 
         assert test_session.scalar(select(Guild).where(Guild.guild_id == str(guild.id))) is not None
 
-    async def test_on_guild_join_sends_embed_and_config_button(self, mocker):
+    async def test_on_guild_join_sends_embed_and_config_button(self, mocker, bot):
         guild = mocker.MagicMock(spec=discord.Guild)
         guild.id = 1234567890
         guild.owner = mocker.MagicMock(spec=discord.Member)
         guild.owner.display_name = "Guild Owner"
         guild.owner.display_avatar = "owner_avatar_url"
-
-        bot_user = mocker.MagicMock(spec=discord.ClientUser)
-        bot_user.display_name = "Bot"
-        bot_user.display_avatar = "bot_avatar_url"
-
-        bot_instance = mocker.MagicMock(spec=commands.Bot)
-        bot_instance.user = bot_user
 
         channel = mocker.MagicMock(spec=discord.TextChannel)
         channel.id = 9876543210
@@ -316,7 +302,7 @@ class TestOnGuildJoin:
         config_button.channel = channel
         config_button.notification_mode = "global"
 
-        mocker.patch('bot.main.bot', new=bot_instance)
+        mocker.patch('bot.main.bot', new=bot)
         mocker.patch('bot.main.get_first_sendable_text_channel', return_value=channel)
         mocker.patch('bot.main.ConfigView', return_value=config_button)
         mocker.patch('bot.main.Session', return_value=mocker.MagicMock())
@@ -354,8 +340,8 @@ class TestOnGuildJoin:
 
 
 @pytest.mark.asyncio
-class TestNotifsFunction:
-    async def test_notifs_with_subscriptions(self, mocker, test_session):
+class TestNotifs:
+    async def test_notifs_with_subscriptions(self, mocker, ctx, test_session):
         # Create test data in the database
         streamer1 = Streamer(streamer_id='1', streamer_name='Streamer1', topic_sub_id='a')
         streamer2 = Streamer(streamer_id='2', streamer_name='Streamer2', topic_sub_id='b')
@@ -371,24 +357,14 @@ class TestNotifsFunction:
         test_session.add_all([subscription1, subscription2])
         test_session.commit()
 
-        # Verify that the test data is inserted into the database
-        assert test_session.query(Streamer).count() == 20
-        assert test_session.query(UserSubscription).count() == 29
-
-        ctx_mock = mocker.MagicMock(spec=discord.ext.commands.Context)
-        ctx_mock.author.id = 123
-        ctx_mock.guild.id = 1076360773879738380
-        ctx_mock.guild.name = 'TestGuild'
-
         mocker.patch('bot.main.Session', return_value=test_session)
 
         # Call the function
-        await notifs(ctx_mock)
+        await notifs(ctx)
 
         # Check if the correct embed message is sent
-        ctx_mock.send.assert_called_once()
-        send_kwargs = ctx_mock.send.call_args.kwargs
-        print(ctx_mock.send.call_args.kwargs)
+        ctx.send.assert_called_once()
+        send_kwargs = ctx.send.call_args.kwargs
         assert 'embed' in send_kwargs
         embed = send_kwargs['embed']
         assert isinstance(embed, discord.Embed)
@@ -396,24 +372,19 @@ class TestNotifsFunction:
         assert "Streamer1" in embed.fields[0].value
         assert "Streamer2" in embed.fields[0].value
 
-    async def test_notifs_no_subscriptions(self, mocker, test_session):
-        ctx_mock = mocker.MagicMock(spec=discord.ext.commands.Context)
-        ctx_mock.author.id = 123
-        ctx_mock.guild.id = 1076360773879738380
-        ctx_mock.guild.name = 'TestGuild'
-
+    async def test_notifs_no_subscriptions(self, mocker, ctx, test_session):
         # Patch the Session in bot.main with the test_session
         mocker.patch('bot.main.Session', return_value=test_session)
 
         # Call the function
-        await notifs(ctx_mock)
+        await notifs(ctx)
 
         # Check if the correct message is sent
-        ctx_mock.send.assert_called_once_with(
-            f'{ctx_mock.author.mention} You are not receiving notifications in {ctx_mock.guild.name}!'
+        ctx.send.assert_called_once_with(
+            f'{ctx.author.mention} You are not receiving notifications in {ctx.guild.name}!'
         )
 
-    async def test_notifs_exceeds_embed_limit(self, mocker, test_session):
+    async def test_notifs_exceeds_embed_limit(self, mocker, ctx, test_session):
         # Create test data in the database
         streamers = [Streamer(streamer_id=str(i), streamer_name=f'Streamer{i}', topic_sub_id=f'a{i}') for i in range(200, 401)]
         test_session.add_all(streamers)
@@ -424,23 +395,66 @@ class TestNotifsFunction:
         test_session.add_all(subscriptions)
         test_session.commit()
 
-        ctx_mock = mocker.MagicMock(spec=discord.ext.commands.Context)
-        ctx_mock.author.id = 123
-        ctx_mock.guild.id = 1076360773879738380
-        ctx_mock.guild.name = 'TestGuild'
-
         # Patch the Session in bot.main with the test_session
         mocker.patch('bot.main.Session', return_value=test_session)
 
         # Call the function
-        await notifs(ctx_mock)
+        await notifs(ctx)
 
         # Check if the correct embed message is sent
-        ctx_mock.send.assert_called_once()
-        send_kwargs = ctx_mock.send.call_args.kwargs
+        ctx.send.assert_called_once()
+        send_kwargs = ctx.send.call_args.kwargs
         assert 'embed' in send_kwargs
         embed = send_kwargs['embed']
         assert isinstance(embed, discord.Embed)
         assert len(embed.fields) == 1
         assert embed.fields[0].name == "Subscribed Streamers"
         assert embed.fields[0].value == "Too many subscriptions to display here!"
+
+
+@pytest.mark.asyncio
+class TestChangeConfig:
+
+    async def test_changeconfig_update_database(self, ctx, bot, mocker, test_session):
+        guild_config = Guild(guild_id='123', notification_channel_id='789', notification_mode='optin')
+        test_session.add(guild_config)
+        test_session.commit()
+
+        ctx.guild.id = 123
+        init_channel = mocker.MagicMock(spec=discord.TextChannel)
+        init_channel.id = 777
+        init_channel.name = 'test-channel'
+        channel = mocker.MagicMock(spec=discord.TextChannel)
+        channel.id = 321
+        backup_channel = mocker.MagicMock(spec=discord.TextChannel)
+        backup_channel.id = 420
+        bot.get_channel.return_value = init_channel
+
+        config_view = mocker.MagicMock(spec=ConfigView)
+        config_view.channel = channel
+        config_view.notification_mode = 'passive'
+        config_view.wait = AsyncMock()
+
+        mocker.patch('bot.main.Session', return_value=test_session)
+        mocker.patch('bot.main.ConfigView', return_value=config_view)
+        mocker.patch('bot.main.get_first_sendable_text_channel', return_value=backup_channel)
+        mocker.patch('bot.main.bot', return_value=bot)
+
+        await changeconfig(ctx)
+
+        assert ctx.send.call_count == 2
+        print(ctx.send.call_args_list)
+        send_embed_kwargs = ctx.send.call_args_list[0].kwargs
+        send_view_kwargs = ctx.send.call_args_list[1].kwargs
+
+        assert 'embed' in send_embed_kwargs
+        embed = send_embed_kwargs['embed']
+        assert isinstance(embed, discord.Embed)
+
+        assert 'view' in send_view_kwargs
+        view = send_view_kwargs['view']
+        assert isinstance(view, ConfigView)
+
+        updated_config = test_session.query(Guild).filter(Guild.guild_id == '123').first()
+        assert updated_config.notification_channel_id == '321'
+        assert updated_config.notification_mode == 'passive'
