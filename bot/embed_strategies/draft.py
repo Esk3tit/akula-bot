@@ -5,7 +5,13 @@ from .base import EmbedCreationStrategy
 
 
 class DraftEmbedStrategy(EmbedCreationStrategy):
-    def create_embed(self, data: StreamOnlineEvent, author_name, author_icon_url) -> discord.Embed:
+    def create_embed(self,
+                     data: StreamOnlineEvent,
+                     author_name,
+                     author_icon_url,
+                     thumbnail_url='https://media.istockphoto.com/id/893424506/vector/smiley-saluting-in-army.jpg?s=612x612&w=0&k=20&c=eJfX306BVuNLZFTJGmmO6xP1Hd6Xw3NVyvRkBHi0NsQ=',
+                     image_url='https://i.imgur.com/beTJRFF.png'
+                     ) -> discord.Embed:
         embed = discord.Embed(
             color=discord.Color.dark_gold(),
             description=f'You have been drafted to stream snipe {data.event.broadcaster_user_name}\n\n'
@@ -16,9 +22,8 @@ class DraftEmbedStrategy(EmbedCreationStrategy):
             timestamp=datetime.utcnow()
         )
         embed.set_author(name=author_name, icon_url=author_icon_url)
-        embed.set_thumbnail(
-            url='https://media.istockphoto.com/id/893424506/vector/smiley-saluting-in-army.jpg?s=612x612&w=0&k=20&c=eJfX306BVuNLZFTJGmmO6xP1Hd6Xw3NVyvRkBHi0NsQ=')
-        embed.set_image(url='https://i.imgur.com/beTJRFF.png')
+        embed.set_thumbnail(url=thumbnail_url)
+        embed.set_image(url=image_url)
 
         embed.add_field(name='Target', value=f'`{data.event.broadcaster_user_name}`', inline=False)
         embed.add_field(name='Last Seen', value=f'`{data.event.started_at}`')

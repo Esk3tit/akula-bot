@@ -5,7 +5,13 @@ from .base import EmbedCreationStrategy
 
 
 class IsisEmbedStrategy(EmbedCreationStrategy):
-    def create_embed(self, data: StreamOnlineEvent, author_name, author_icon_url) -> discord.Embed:
+    def create_embed(self,
+                     data: StreamOnlineEvent,
+                     author_name,
+                     author_icon_url,
+                     thumbnail_url='https://i.redd.it/0v56nkk1v3891.jpg',
+                     image_url='https://i.imgur.com/rC4do2n.png'
+                     ) -> discord.Embed:
         embed = discord.Embed(
             color=discord.Color.dark_red(),
             description="""
@@ -19,9 +25,8 @@ class IsisEmbedStrategy(EmbedCreationStrategy):
             timestamp=datetime.utcnow()
         )
         embed.set_author(name=author_name, icon_url=author_icon_url)
-        embed.set_thumbnail(
-            url='https://i.redd.it/0v56nkk1v3891.jpg')
-        embed.set_image(url='https://i.imgur.com/rC4do2n.png')
+        embed.set_thumbnail(url=thumbnail_url)
+        embed.set_image(url=image_url)
 
         embed.add_field(name='Infidel', value=f'`{data.event.broadcaster_user_name}`', inline=False)
         embed.add_field(name='Last Seen', value=f'`{data.event.started_at}`')
