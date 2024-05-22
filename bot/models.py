@@ -26,6 +26,7 @@ class Guild(Base):
                                                                         passive_deletes=True,
                                                                         cascade='all, delete-orphan')
     notification_mode: Mapped[str]
+    is_censored: Mapped[bool] = mapped_column(default=False)
 
 
 class Streamer(Base):
