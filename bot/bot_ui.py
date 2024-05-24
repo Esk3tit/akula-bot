@@ -1,21 +1,29 @@
+from typing import Optional
+
 import discord
 from datetime import datetime
 from discord import Interaction
 from twitchAPI.object.eventsub import StreamOnlineEvent
-import random
 
 
 class EmbedCreationContext:
     def __init__(self, strategy):
         self._strategy = strategy
 
-    def create_embed(self, data: StreamOnlineEvent, author_name, author_icon_url) -> discord.Embed:
-        return self._strategy.create_embed(data, author_name, author_icon_url)
+    def create_embed(self,
+                     data: StreamOnlineEvent,
+                     author_name,
+                     author_icon_url,
+                     thumbnail_url: Optional[str] = None,
+                     image_url: Optional[str] = None
+                     ) -> discord.Embed:
+        return self._strategy.create_embed(data, author_name, author_icon_url, thumbnail_url, image_url)
 
 
 def create_config_embed(
         channel_name: str,
         channel_mode: str,
+        is_censored: str,
         author_name: str,
         author_icon_url: discord.Asset,
         embed_author: str,
@@ -29,6 +37,7 @@ def create_config_embed(
     embed.set_author(name=author_name, icon_url=author_icon_url)
     embed.add_field(name='Current Notification Channel', value=channel_name, inline=False)
     embed.add_field(name='Current Notification Channel Mode', value=channel_mode, inline=False)
+    embed.add_field(name='Current SFW/Censorship Notification Status', value=is_censored, inline=False)
     embed.set_footer(text=f"Requested by {embed_author}", icon_url=embed_author_icon)
     return embed
 
@@ -36,6 +45,7 @@ def create_config_embed(
 def create_config_confirmation_embed(
         channel_name: str,
         channel_mode: str,
+        is_censored: str,
         author_name: str,
         author_icon_url: discord.Asset,
 ) -> discord.Embed:
@@ -45,6 +55,7 @@ def create_config_confirmation_embed(
     embed.set_author(name=author_name, icon_url=author_icon_url)
     embed.add_field(name='Notification Channel', value=channel_name, inline=False)
     embed.add_field(name='Notification Channel Mode', value=channel_mode, inline=False)
+    embed.add_field(name='SFW/Censored Notifications?', value=is_censored, inline=False)
     return embed
 
 
@@ -62,6 +73,7 @@ class ConfigView(discord.ui.View):
         self.channel = None
         self.message = None
         self.notification_mode = 'optin'
+        self.is_censored = False
         super().__init__(timeout=timeout)
 
     async def disable_all_items(self):
@@ -106,6 +118,28 @@ class ConfigView(discord.ui.View):
         self.notification_mode = select.values[0]
         await interaction.response.defer()
 
+    @discord.ui.select(
+        cls=discord.ui.Select,
+        placeholder='Enable Safe For Work/Censored Notifications?',
+        options=[
+            discord.SelectOption(
+                label='Yes',
+                value='true',
+                description='Safe For Work Notifications will be shown instead of the special randomly selected ones',
+                default=False
+            ),
+            discord.SelectOption(
+                label='No',
+                value='false',
+                description='Special randomly selected notifications will be shown (default)',
+                default=True
+            )
+        ]
+    )
+    async def select_censorship(self, interaction: discord.Interaction, select: discord.ui.Select):
+        self.is_censored = True if select.values[0] == 'true' else False
+        await interaction.response.defer()
+
     @discord.ui.button(emoji='💾', style=discord.ButtonStyle.primary, label='Save')
     async def save_config(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Disable selects and button
@@ -113,6 +147,7 @@ class ConfigView(discord.ui.View):
         embed = create_config_confirmation_embed(
             self.channel.name,
             self.notification_mode,
+            str(self.is_censored),
             self.embed_author.name,
             self.embed_author.avatar
         )

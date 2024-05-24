@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from discord.ext import commands
 from twitchAPI.object.eventsub import StreamOnlineEvent, StreamOnlineData
 from twitchAPI.twitch import Twitch
+from twitchAPI.helper import first
 from dotenv import load_dotenv
 from twitchAPI.eventsub.webhook import EventSubWebhook
 
@@ -19,6 +20,7 @@ from bot.embed_strategies.draft import DraftEmbedStrategy
 from bot.embed_strategies.isis import IsisEmbedStrategy
 from bot.bot_utils import is_owner, get_first_sendable_text_channel, validate_streamer_ids_get_names, streamer_get_ids_names_from_logins, is_owner_or_optin_mode
 from bot.embed_strategies.prigozhin import PrigozhinEmbedStrategy
+from bot.embed_strategies.sfw import SafeForWorkEmbedStrategy
 from bot.models import Base, Guild, UserSubscription, Streamer
 
 # Load dotenv if on local env (check for prod only env var)
@@ -64,7 +66,8 @@ async def on_stream_online(data: StreamOnlineEvent):
                 if row[0].guild_id not in guild_users_map:
                     guild_users_map[row[0].guild_id] = {'notif_channel_id': row[0].notification_channel_id,
                                                         'user_ids': set(),
-                                                        'notif_mode': row[0].notification_mode}
+                                                        'notif_mode': row[0].notification_mode,
+                                                        'is_censored': row[0].is_censored}
                 guild_users_map[row[0].guild_id]['user_ids'].add(row[1])
 
         # Iterate through all servers and notify users in each one
@@ -74,11 +77,23 @@ async def on_stream_online(data: StreamOnlineEvent):
                 # Check notification mode and act accordingly, only send if server owner
                 # is subbed in global or passive mode
                 notification_mode = user_sub_obj['notif_mode']
+                guild = bot.get_guild(int(guild_id))
+
+                # Censorship check and dynamic SFW embed generation
+                is_censored = user_sub_obj['is_censored']
+                sfw_context = EmbedCreationContext(SafeForWorkEmbedStrategy())
+                twitch_user = await first(twitch_obj.get_users(user_ids=[data.event.broadcaster_user_id]))
+                sfw_embed = sfw_context.create_embed(
+                    data,
+                    bot.user.name,
+                    bot.user.avatar,
+                    guild.icon.url,
+                    twitch_user.profile_image_url
+                )
                 if notification_mode == 'global' or notification_mode == 'passive':
-                    guild = bot.get_guild(int(guild_id))
                     owner_id = str(guild.owner_id)
                     if owner_id in user_sub_obj['user_ids']:
-                        await channel.send(embed=embed)
+                        await channel.send(embed=embed if not is_censored else sfw_embed)
                         # Send embed now for both global and passive, but only mention everyone
                         # or here if global
                         if notification_mode == 'global':
@@ -89,7 +104,7 @@ async def on_stream_online(data: StreamOnlineEvent):
                                     "The bot doesn't have permission to mention everyone. Mentioning here instead.")
                                 await channel.send('@here')
                 else:
-                    await channel.send(embed=embed)
+                    await channel.send(embed=embed if not is_censored else sfw_embed)
                     await channel.send(' '.join(f"<@{user_id}>" for user_id in user_sub_obj['user_ids']))
 
     # Schedule in the discord.py's event loop
@@ -341,6 +356,7 @@ async def changeconfig(ctx):
         guild_config = session.scalar(select(Guild).where(Guild.guild_id == str(ctx.guild.id)))
         embed = create_config_embed(bot.get_channel(int(guild_config.notification_channel_id)).name,
                                     guild_config.notification_mode,
+                                    str(guild_config.is_censored),
                                     bot.user.name,
                                     bot.user.display_avatar,
                                     ctx.author.display_name,
@@ -358,7 +374,8 @@ async def changeconfig(ctx):
             where(Guild.guild_id == str(ctx.guild.id)).
             values(
                 notification_channel_id=str(view.channel.id or channel.id),
-                notification_mode=view.notification_mode
+                notification_mode=view.notification_mode,
+                is_censored=view.is_censored,
             )
         )
         session.commit()
@@ -376,7 +393,7 @@ async def test(ctx):
     test_data.event.broadcaster_user_name = "Test"
     test_data.event.started_at = "2021-02-02"
     test_data.event.broadcaster_user_login = "test"
-    embed = PrigozhinEmbedStrategy().create_embed(test_data, bot.user.name, bot.user.avatar)
+    embed = SafeForWorkEmbedStrategy().create_embed(test_data, bot.user.name, bot.user.avatar, 'https://preview.redd.it/i-made-steamhappy-vector-image-v0-jmmqmwzwk14c1.png?width=800&format=png&auto=webp&s=7cc8498450fbd323b22899722ac24cbd23a91a83', 'https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/97/b4/77/97b4777d-59c9-f6c9-c4f1-aa58764ce173/artwork.jpg/1200x1200bb.jpg')
     await ctx.send(embed=embed)
 
 

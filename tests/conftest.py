@@ -7,6 +7,8 @@ from discord.ext.commands import Context, Bot
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
+from twitchAPI.object.eventsub import StreamOnlineEvent, StreamOnlineData
+
 from bot.models import Base
 
 # Load dotenv if on local env (check for prod only env var)
@@ -73,3 +75,13 @@ def ctx():
     context.author.display_name = 'TestUser'
     context.author.display_avatar = 'test_avatar_url'
     return context
+
+
+@pytest.fixture(scope='function')
+def mock_stream_online_data(mocker):
+    mock_data = mocker.Mock(spec=StreamOnlineEvent)
+    mock_data.event = mocker.Mock(spec=StreamOnlineData)
+    mock_data.event.broadcaster_user_name = "test_user"
+    mock_data.event.broadcaster_user_login = "test_user_login"
+    mock_data.event.started_at = "2022-01-01 12:00:00"
+    return mock_data
