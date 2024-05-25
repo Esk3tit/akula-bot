@@ -5,12 +5,14 @@ from .base import EmbedCreationStrategy
 
 
 class DraftEmbedStrategy(EmbedCreationStrategy):
+    thumbnail_url = 'https://media.istockphoto.com/id/893424506/vector/smiley-saluting-in-army.jpg?s=612x612&w=0&k=20&c=eJfX306BVuNLZFTJGmmO6xP1Hd6Xw3NVyvRkBHi0NsQ='
+    image_url = 'https://i.imgur.com/beTJRFF.png'
     def create_embed(self,
                      data: StreamOnlineEvent,
                      author_name,
                      author_icon_url,
-                     thumbnail_url='https://media.istockphoto.com/id/893424506/vector/smiley-saluting-in-army.jpg?s=612x612&w=0&k=20&c=eJfX306BVuNLZFTJGmmO6xP1Hd6Xw3NVyvRkBHi0NsQ=',
-                     image_url='https://i.imgur.com/beTJRFF.png'
+                     thumbnail_url=thumbnail_url,
+                     image_url=image_url
                      ) -> discord.Embed:
         embed = discord.Embed(
             color=discord.Color.dark_gold(),

@@ -5,12 +5,15 @@ from .base import EmbedCreationStrategy
 
 
 class IsisEmbedStrategy(EmbedCreationStrategy):
+    thumbnail_url = 'https://i.redd.it/0v56nkk1v3891.jpg'
+    image_url = 'https://i.imgur.com/rC4do2n.png'
+
     def create_embed(self,
                      data: StreamOnlineEvent,
                      author_name,
                      author_icon_url,
-                     thumbnail_url='https://i.redd.it/0v56nkk1v3891.jpg',
-                     image_url='https://i.imgur.com/rC4do2n.png'
+                     thumbnail_url=thumbnail_url,
+                     image_url=image_url
                      ) -> discord.Embed:
         embed = discord.Embed(
             color=discord.Color.dark_red(),

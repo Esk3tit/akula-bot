@@ -5,12 +5,14 @@ from .base import EmbedCreationStrategy
 
 
 class PrigozhinEmbedStrategy(EmbedCreationStrategy):
+    thumbnail_url = 'https://i.imgur.com/egYCwpv.jpg'
+    image_url = 'https://www.aljazeera.com/wp-content/uploads/2023/08/AP23235625627301-1692854633.jpg?resize=730%2C410&quality=80'
     def create_embed(self,
                      data: StreamOnlineEvent,
                      author_name,
                      author_icon_url,
-                     thumbnail_url='https://i.imgur.com/egYCwpv.jpg',
-                     image_url='https://www.aljazeera.com/wp-content/uploads/2023/08/AP23235625627301-1692854633.jpg?resize=730%2C410&quality=80'
+                     thumbnail_url=thumbnail_url,
+                     image_url=image_url
                      ) -> discord.Embed:
         embed = discord.Embed(
             color=discord.Color.dark_magenta(),
