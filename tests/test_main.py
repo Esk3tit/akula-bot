@@ -3,15 +3,110 @@ from unittest.mock import AsyncMock, call
 
 import discord
 import pytest
-import twitchAPI.eventsub.webhook
+from twitchAPI.eventsub.webhook import EventSubWebhook
 from sqlalchemy import select
 
 from bot.bot_ui import ConfigView
 from bot.main import parse_streamers_from_command, on_guild_remove, on_guild_join, notifs, changeconfig, on_ready, \
-    WEBHOOK_URL, notify_error, changeconfig_error, unnotify_error
+    WEBHOOK_URL, notify_error, changeconfig_error, unnotify_error, subscribe_all, on_stream_online
 from twitchAPI.twitch import Twitch
 
 from bot.models import Guild, UserSubscription, Streamer
+
+
+@pytest.mark.asyncio
+class TestSubscribeAll:
+    async def test_subscribe_all_success(self, mocker, test_session):
+        # Mock the Session and Streamer objects
+        mock_streamer1 = mocker.MagicMock(spec=Streamer)
+        mock_streamer1.streamer_id = "123"
+        mock_streamer2 = mocker.MagicMock(spec=Streamer)
+        mock_streamer2.streamer_id = "456"
+
+        # Mock the scalars function and chain the return_value attributes
+        mock_scalars = mocker.MagicMock()
+        mock_scalars.return_value.all.return_value = [mock_streamer1, mock_streamer2]
+        test_session.scalars = mock_scalars
+
+        # Mock the commit method
+        mock_commit = mocker.MagicMock()
+        test_session.commit = mock_commit
+
+        # Mock the webhook object
+        mock_webhook = AsyncMock(spec=EventSubWebhook)
+        mock_webhook.listen_stream_online.side_effect = ["topic1", "topic2"]
+
+        # Patch the Session and EventSubWebhook classes
+        mocker.patch('bot.main.Session', return_value=test_session)
+        mocker.patch('twitchAPI.eventsub.webhook.EventSubWebhook', return_value=mock_webhook)
+
+        # Call the subscribe_all function
+        await subscribe_all(mock_webhook)
+
+        # Assert that the listen_stream_online method was called for each streamer
+        mock_webhook.listen_stream_online.assert_any_call(mock_streamer1.streamer_id, on_stream_online)
+        mock_webhook.listen_stream_online.assert_any_call(mock_streamer2.streamer_id, on_stream_online)
+
+        # Assert that the topic_sub_id was set for each streamer
+        assert mock_streamer1.topic_sub_id == "topic1"
+        assert mock_streamer2.topic_sub_id == "topic2"
+
+        # Assert that the session was committed
+        test_session.commit.assert_called_once()
+
+    async def test_subscribe_all_no_streamers(self, mocker, test_session):
+        # Mock the scalars function and chain the return_value attributes
+        mock_scalars = mocker.MagicMock()
+        mock_scalars.return_value.all.return_value = []
+        test_session.scalars = mock_scalars
+
+        # Mock the commit method
+        mock_commit = mocker.MagicMock()
+        test_session.commit = mock_commit
+
+        # Mock the webhook object
+        mock_webhook = AsyncMock(spec=EventSubWebhook)
+
+        # Patch the Session and EventSubWebhook classes
+        mocker.patch('bot.main.Session', return_value=test_session)
+        mocker.patch('twitchAPI.eventsub.webhook.EventSubWebhook', return_value=mock_webhook)
+
+        # Call the subscribe_all function
+        await subscribe_all(mock_webhook)
+
+        # Assert that the listen_stream_online method was not called
+        mock_webhook.listen_stream_online.assert_not_called()
+
+        # Assert that the session was not committed
+        test_session.commit.assert_called_once()
+
+    async def test_subscribe_all_exception(self, mocker, test_session):
+        mock_streamer = mocker.MagicMock(spec=Streamer)
+        mock_streamer.streamer_id = "123"
+
+        # Mock the scalars function and chain the return_value attributes
+        mock_scalars = mocker.MagicMock()
+        mock_scalars.return_value.all.return_value = [mock_streamer]
+        test_session.scalars = mock_scalars
+
+        # Mock the commit method
+        mock_commit = mocker.MagicMock()
+        test_session.commit = mock_commit
+
+        # Mock the webhook object to raise an exception
+        mock_webhook = AsyncMock(spec=EventSubWebhook)
+        mock_webhook.listen_stream_online.side_effect = Exception("Subscription failed")
+
+        # Patch the Session and EventSubWebhook classes
+        mocker.patch('bot.main.Session', return_value=test_session)
+        mocker.patch('twitchAPI.eventsub.webhook.EventSubWebhook', return_value=mock_webhook)
+
+        # Call the subscribe_all function and assert that it raises an exception
+        with pytest.raises(Exception, match="Subscription failed"):
+            await subscribe_all(mock_webhook)
+
+        # Assert that the session was not committed
+        test_session.commit.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -238,18 +333,18 @@ class TestParseStreamersFromCommand:
 @pytest.mark.asyncio
 class TestOnGuildRemove:
 
-    def test_on_guild_remove_deletes_guild(self, mocker, test_session):
+    async def test_on_guild_remove_deletes_guild(self, mocker, test_session):
         guild = mocker.MagicMock(spec=discord.Guild)
         guild.id = 1076360773879738380
         mocker.patch('bot.main.Session', return_value=test_session)
-        asyncio.run(on_guild_remove(guild))
+        await on_guild_remove(guild)
         assert test_session.scalar(select(Guild).where(Guild.guild_id == str(guild.id))) is None
 
-    def test_on_guild_remove_cascade_deletes_user_subscriptions_and_streamers(self, mocker, test_session):
+    async def test_on_guild_remove_cascade_deletes_user_subscriptions_and_streamers(self, mocker, test_session):
         guild = mocker.MagicMock(spec=discord.Guild)
         guild.id = 1076360773879738380
         mocker.patch('bot.main.Session', return_value=test_session)
-        asyncio.run(on_guild_remove(guild))
+        await on_guild_remove(guild)
         assert test_session.scalars(
             select(UserSubscription).where(UserSubscription.guild_id == str(guild.id))).all() == []
         assert test_session.scalar(select(Streamer).where(Streamer.streamer_id == '6')) is None
@@ -257,11 +352,11 @@ class TestOnGuildRemove:
         assert test_session.scalar(select(Streamer).where(Streamer.streamer_id == '8')) is None
         assert test_session.scalar(select(Streamer).where(Streamer.streamer_id == '9')) is None
 
-    def test_on_guild_streamer_still_subbed_not_deleted(self, mocker, test_session):
+    async def test_on_guild_streamer_still_subbed_not_deleted(self, mocker, test_session):
         guild = mocker.MagicMock(spec=discord.Guild)
         guild.id = 1076360773879738380
         mocker.patch('bot.main.Session', return_value=test_session)
-        asyncio.run(on_guild_remove(guild))
+        await on_guild_remove(guild)
         assert test_session.scalar(select(Streamer).where(Streamer.streamer_id == '433451304')) is not None
         assert test_session.scalar(select(Streamer).where(Streamer.streamer_id == '162656602')) is not None
 
@@ -313,6 +408,7 @@ class TestOnGuildJoin:
 
         await on_guild_join(guild)
 
+        channel.send.assert_any_call(f'{guild.owner.mention}')
         channel.send.assert_any_call(embed=mocker.ANY)
         channel.send.assert_any_call(view=mocker.ANY)
 
@@ -483,7 +579,7 @@ class TestOnReady:
         twitch_obj_mock = mocker.patch('bot.main.twitch_obj', new=mocker.MagicMock())
         mocker.patch('bot.main.webhook_obj', new=mocker.MagicMock())
         mocker.patch('twitchAPI.eventsub.webhook.EventSubWebhook',
-                     mocker.MagicMock(spec=twitchAPI.eventsub.webhook.EventSubWebhook,
+                     mocker.MagicMock(spec=EventSubWebhook,
                                       callback_url=WEBHOOK_URL, port=8080, twitch=twitch_obj_mock,
                                       start=AsyncMock))
         mock_subscribe_all = mocker.patch('bot.main.subscribe_all', new_callable=AsyncMock)
@@ -501,7 +597,6 @@ class TestOnReady:
         mock_print = mocker.patch('builtins.print')
         mocker.patch('bot.main.bot', new=bot)
         mocker.patch('bot.main.bot.tree.sync', new_callable=AsyncMock)
-        # mocker.patch('twitchAPI.twitch.Twitch', AsyncMock(side_effect=Exception("Invalid credentials")))
         mocker.patch('bot.main.Twitch', AsyncMock(side_effect=Exception("Invalid credentials")))
 
         try:
