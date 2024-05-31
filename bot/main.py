@@ -385,7 +385,11 @@ async def changeconfig(ctx):
 
 @changeconfig.error
 async def changeconfig_error(ctx, error):
-    await ctx.send(f"You do not have permission to use this command!, {error}", ephemeral=True)
+    print(error)
+    await ctx.send(
+        f"{ctx.author.mention} You don't have permission to use this command...",
+        ephemeral=True
+    )
 
 
 @bot.hybrid_command(name='test', description='for testing code when executed')

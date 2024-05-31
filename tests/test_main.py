@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from bot.bot_ui import ConfigView
 from bot.main import parse_streamers_from_command, on_guild_remove, on_guild_join, notifs, changeconfig, on_ready, \
-    WEBHOOK_URL
+    WEBHOOK_URL, notify_error, changeconfig_error, unnotify_error
 from twitchAPI.twitch import Twitch
 
 from bot.models import Guild, UserSubscription, Streamer
@@ -424,7 +424,11 @@ class TestNotifs:
 class TestChangeConfig:
 
     async def test_changeconfig_update_database(self, ctx, bot, mocker, test_session):
-        guild_config = Guild(guild_id='123', notification_channel_id='789', notification_mode='optin')
+        guild_config = Guild(guild_id='123',
+                             notification_channel_id='789',
+                             notification_mode='optin',
+                             is_censored=False
+                             )
         test_session.add(guild_config)
         test_session.commit()
 
@@ -441,6 +445,7 @@ class TestChangeConfig:
         config_view = mocker.MagicMock(spec=ConfigView)
         config_view.channel = channel
         config_view.notification_mode = 'passive'
+        config_view.is_censored = True
         config_view.wait = AsyncMock()
 
         mocker.patch('bot.main.Session', return_value=test_session)
@@ -466,6 +471,7 @@ class TestChangeConfig:
         updated_config = test_session.query(Guild).filter(Guild.guild_id == '123').first()
         assert updated_config.notification_channel_id == '321'
         assert updated_config.notification_mode == 'passive'
+        assert updated_config.is_censored is True
 
 
 @pytest.mark.asyncio
@@ -495,13 +501,55 @@ class TestOnReady:
         mock_print = mocker.patch('builtins.print')
         mocker.patch('bot.main.bot', new=bot)
         mocker.patch('bot.main.bot.tree.sync', new_callable=AsyncMock)
-        mocker.patch('twitchAPI.twitch.Twitch', AsyncMock(side_effect=Exception("Invalid credentials")))
+        # mocker.patch('twitchAPI.twitch.Twitch', AsyncMock(side_effect=Exception("Invalid credentials")))
+        mocker.patch('bot.main.Twitch', AsyncMock(side_effect=Exception("Invalid credentials")))
 
-        with pytest.raises(Exception) as excinfo:
+        try:
             await on_ready()
+        except Exception as e:
+            assert str(e) == "Invalid credentials"
+        else:
+            assert False, "Expected exception was not raised"
 
-        assert str(excinfo.value) == "Invalid credentials"
         mock_print.assert_has_calls([
-            call(f'{bot.user.name} has connected to Discord!'),
-            call("Error: Invalid credentials")
+            call(f'{bot.user.name} has connected to Discord!')
         ])
+
+
+@pytest.mark.asyncio
+class TestChangeConfigError:
+    async def test_changeconfig_error(self, mocker, ctx):
+        error = mocker.MagicMock()
+        mock_print = mocker.patch('builtins.print')
+
+        await changeconfig_error(ctx, error)
+
+        mock_print.assert_called_once_with(error)
+        ctx.send.assert_called_once_with(f"{ctx.author.mention} You don't have permission to use this command...",
+                                         ephemeral=True)
+
+
+@pytest.mark.asyncio
+class TestUnnotifyError:
+    async def test_unnotify_error(self, mocker, ctx):
+        error = mocker.MagicMock()
+        mock_print = mocker.patch('builtins.print')
+
+        await unnotify_error(ctx, error)
+
+        mock_print.assert_called_once_with(error)
+        ctx.send.assert_called_once_with(f"{ctx.author.mention} You don't have permission to use this command...",
+                                         ephemeral=True)
+
+
+@pytest.mark.asyncio
+class TestNotifyError:
+    async def test_notify_error(self, mocker, ctx):
+        error = mocker.MagicMock()
+        mock_print = mocker.patch('builtins.print')
+
+        await notify_error(ctx, error)
+
+        mock_print.assert_called_once_with(error)
+        ctx.send.assert_called_once_with(f"{ctx.author.mention} You don't have permission to use this command...",
+                                         ephemeral=True)
