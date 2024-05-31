@@ -175,22 +175,24 @@ async def on_guild_join(guild: discord.Guild):
             print(f"Error: {e}")
         return
 
-    config_button = ConfigView(guild.owner.id, bot.user, guild)
+    config_view = ConfigView(guild.owner.id, bot.user, guild)
     embed = create_config_embed(
         'No channel configured yet',
         'default is Opt-In',
+        'default is False',
         bot.user.display_name,
         bot.user.display_avatar,
         guild.owner.display_name,
         guild.owner.display_avatar
     )
+    await channel.send(f'{guild.owner.mention}')
     await channel.send(embed=embed)
-    config_button.message = await channel.send(view=config_button)
-    await config_button.wait()
+    config_view.message = await channel.send(view=config_view)
+    await config_view.wait()
 
     new_server = Guild(guild_id=str(guild.id),
-                       notification_channel_id=str(config_button.channel.id or channel.id),
-                       notification_mode=config_button.notification_mode)
+                       notification_channel_id=str(config_view.channel.id or channel.id),
+                       notification_mode=config_view.notification_mode)
     with Session(engine) as session:
         session.add(new_server)
         session.commit()

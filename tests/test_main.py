@@ -1,13 +1,14 @@
 import asyncio
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 import discord
 import pytest
-from discord.ext import commands
+import twitchAPI.eventsub.webhook
 from sqlalchemy import select
 
 from bot.bot_ui import ConfigView
-from bot.main import parse_streamers_from_command, on_guild_remove, on_guild_join, notifs, changeconfig
+from bot.main import parse_streamers_from_command, on_guild_remove, on_guild_join, notifs, changeconfig, on_ready, \
+    WEBHOOK_URL
 from twitchAPI.twitch import Twitch
 
 from bot.models import Guild, UserSubscription, Streamer
@@ -46,7 +47,8 @@ class TestParseStreamersFromCommand:
         result = await parse_streamers_from_command(streamers)
         assert set(result) == {'123', '456', '789'}
         mock_streamer_get_ids_names_from_logins.assert_called_once()
-        assert sorted(mock_streamer_get_ids_names_from_logins.call_args[0][1]) == sorted(['streamer1', 'streamer2', 'streamer3'])
+        assert sorted(mock_streamer_get_ids_names_from_logins.call_args[0][1]) == sorted(
+            ['streamer1', 'streamer2', 'streamer3'])
         mock_validate_streamer_ids_get_names.assert_not_called()
 
     async def test_parse_streamers_from_command_with_urls(self, mocker):
@@ -150,7 +152,8 @@ class TestParseStreamersFromCommand:
         result = await parse_streamers_from_command(streamers)
         assert result == []
         mock_streamer_get_ids_names_from_logins.assert_called_once()
-        assert sorted(mock_streamer_get_ids_names_from_logins.call_args[0][1]) == sorted(['https://invalid.com/streamer1', 'invalid_streamer2'])
+        assert sorted(mock_streamer_get_ids_names_from_logins.call_args[0][1]) == sorted(
+            ['https://invalid.com/streamer1', 'invalid_streamer2'])
         mock_validate_streamer_ids_get_names.assert_not_called()
 
     async def test_parse_streamers_from_command_with_uninitialized_twitch_obj(self, mocker):
@@ -247,7 +250,8 @@ class TestOnGuildRemove:
         guild.id = 1076360773879738380
         mocker.patch('bot.main.Session', return_value=test_session)
         asyncio.run(on_guild_remove(guild))
-        assert test_session.scalars(select(UserSubscription).where(UserSubscription.guild_id == str(guild.id))).all() == []
+        assert test_session.scalars(
+            select(UserSubscription).where(UserSubscription.guild_id == str(guild.id))).all() == []
         assert test_session.scalar(select(Streamer).where(Streamer.streamer_id == '6')) is None
         assert test_session.scalar(select(Streamer).where(Streamer.streamer_id == '7')) is None
         assert test_session.scalar(select(Streamer).where(Streamer.streamer_id == '8')) is None
@@ -330,7 +334,8 @@ class TestOnGuildJoin:
         guild = mocker.MagicMock(spec=discord.Guild)
         guild.id = 1234567890
         mocker.patch('bot.main.get_first_sendable_text_channel', return_value=None)
-        guild.owner.send = AsyncMock(side_effect=discord.HTTPException(response=mocker.MagicMock(), message="Test Exception"))
+        guild.owner.send = AsyncMock(
+            side_effect=discord.HTTPException(response=mocker.MagicMock(), message="Test Exception"))
 
         await on_guild_join(guild)
 
@@ -386,12 +391,15 @@ class TestNotifs:
 
     async def test_notifs_exceeds_embed_limit(self, mocker, ctx, test_session):
         # Create test data in the database
-        streamers = [Streamer(streamer_id=str(i), streamer_name=f'Streamer{i}', topic_sub_id=f'a{i}') for i in range(200, 401)]
+        streamers = [Streamer(streamer_id=str(i), streamer_name=f'Streamer{i}', topic_sub_id=f'a{i}') for i in
+                     range(200, 401)]
         test_session.add_all(streamers)
         test_session.flush()
 
-        subscriptions = [UserSubscription(user_id='123', guild_id='1076360773879738380', streamer_id=streamer.streamer_id) for streamer
-                         in streamers]
+        subscriptions = [
+            UserSubscription(user_id='123', guild_id='1076360773879738380', streamer_id=streamer.streamer_id) for
+            streamer
+            in streamers]
         test_session.add_all(subscriptions)
         test_session.commit()
 
@@ -458,3 +466,42 @@ class TestChangeConfig:
         updated_config = test_session.query(Guild).filter(Guild.guild_id == '123').first()
         assert updated_config.notification_channel_id == '321'
         assert updated_config.notification_mode == 'passive'
+
+
+@pytest.mark.asyncio
+class TestOnReady:
+    async def test_on_ready_successful(self, bot, mocker):
+        mock_print = mocker.patch('builtins.print')
+        mocker.patch('bot.main.bot', new=bot)
+        mock_bot_tree_sync = mocker.patch('bot.main.bot.tree.sync', new_callable=AsyncMock)
+        twitch_obj_mock = mocker.patch('bot.main.twitch_obj', new=mocker.MagicMock())
+        mocker.patch('bot.main.webhook_obj', new=mocker.MagicMock())
+        mocker.patch('twitchAPI.eventsub.webhook.EventSubWebhook',
+                     mocker.MagicMock(spec=twitchAPI.eventsub.webhook.EventSubWebhook,
+                                      callback_url=WEBHOOK_URL, port=8080, twitch=twitch_obj_mock,
+                                      start=AsyncMock))
+        mock_subscribe_all = mocker.patch('bot.main.subscribe_all', new_callable=AsyncMock)
+        await on_ready()
+
+        mock_print.assert_has_calls([
+            call(f'{bot.user.name} has connected to Discord!'),
+            call("Subscribing to streamers... Please wait..."),
+            call("Successfully subscribed to all streamers in the DB!")
+        ])
+        mock_bot_tree_sync.assert_called_once()
+        mock_subscribe_all.assert_called_once()
+
+    async def test_on_ready_invalid_twitch_credentials(self, bot, mocker):
+        mock_print = mocker.patch('builtins.print')
+        mocker.patch('bot.main.bot', new=bot)
+        mocker.patch('bot.main.bot.tree.sync', new_callable=AsyncMock)
+        mocker.patch('twitchAPI.twitch.Twitch', AsyncMock(side_effect=Exception("Invalid credentials")))
+
+        with pytest.raises(Exception) as excinfo:
+            await on_ready()
+
+        assert str(excinfo.value) == "Invalid credentials"
+        mock_print.assert_has_calls([
+            call(f'{bot.user.name} has connected to Discord!'),
+            call("Error: Invalid credentials")
+        ])
