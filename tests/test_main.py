@@ -3,12 +3,13 @@ from unittest.mock import AsyncMock, call
 
 import discord
 import pytest
+from sqlalchemy.exc import IntegrityError
 from twitchAPI.eventsub.webhook import EventSubWebhook
 from sqlalchemy import select
 
 from bot.bot_ui import ConfigView
 from bot.main import parse_streamers_from_command, on_guild_remove, on_guild_join, notifs, changeconfig, on_ready, \
-    WEBHOOK_URL, notify_error, changeconfig_error, unnotify_error, subscribe_all, on_stream_online
+    WEBHOOK_URL, notify_error, changeconfig_error, unnotify_error, subscribe_all, on_stream_online, notify
 from twitchAPI.twitch import Twitch
 
 from bot.models import Guild, UserSubscription, Streamer
@@ -648,3 +649,105 @@ class TestNotifyError:
         mock_print.assert_called_once_with(error)
         ctx.send.assert_called_once_with(f"{ctx.author.mention} You don't have permission to use this command...",
                                          ephemeral=True)
+
+
+@pytest.mark.asyncio
+class TestNotify:
+    async def test_notify_success(self, ctx, test_session, mocker):
+        streamer1 = mocker.MagicMock(spec=Streamer)
+        streamer1.id = '789'
+        streamer1.name = 'streamer1'
+
+        streamer2 = mocker.MagicMock(spec=Streamer)
+        streamer2.id = '012'
+        streamer2.name = 'streamer2'
+
+        clean_streamers = [streamer1, streamer2]
+
+        mock_parse_streamers = mocker.patch('bot.main.parse_streamers_from_command', return_value=clean_streamers)
+        mock_webhook_obj = mocker.patch('bot.main.webhook_obj')
+        mock_listen_stream_online = mocker.AsyncMock(side_effect=['topic1', 'topic2'])
+        mock_webhook_obj.listen_stream_online = mock_listen_stream_online
+        test_session.scalar = mocker.MagicMock(return_value=None)
+        test_session.execute = mocker.MagicMock()
+        test_session.add = mocker.MagicMock()
+        test_session.commit = mocker.MagicMock()
+
+        mocker.patch('bot.main.Session', return_value=test_session)
+        await notify(ctx, 'streamer1', 'streamer2')
+
+        mock_parse_streamers.assert_called_once_with(('streamer1', 'streamer2'))
+        mock_listen_stream_online.assert_any_call('789', on_stream_online)
+        mock_listen_stream_online.assert_any_call('012', on_stream_online)
+        test_session.add.assert_any_call(mocker.ANY)
+        test_session.commit.assert_called()
+        ctx.send.assert_called_once_with(
+            f'{ctx.author.mention} will now be notified of when the following streamers are live: `streamer1, streamer2`'
+        )
+
+    async def test_notify_unable_to_find_streamer(self, ctx, mocker):
+        mock_parse_streamers = mocker.patch('bot.main.parse_streamers_from_command', return_value=[])
+        mocker.patch('bot.main.webhook_obj')
+
+        await notify(ctx, 'streamer1', 'streamer2')
+
+        mock_parse_streamers.assert_called_once_with(('streamer1', 'streamer2'))
+        ctx.send.assert_called_once_with(
+            f'{ctx.author.mention} Unable to find one of the given streamer(s), please try again... MAGGOT!'
+        )
+
+    async def test_notify_streamer_already_exists(self, ctx, test_session, mocker):
+        streamer1 = mocker.MagicMock(spec=Streamer)
+        streamer1.id = '666777'
+        streamer1.name = 'streamer1'
+
+        clean_streamers = [streamer1]
+
+        mock_parse_streamers = mocker.patch('bot.main.parse_streamers_from_command', return_value=clean_streamers)
+        mock_webhook_obj = mocker.patch('bot.main.webhook_obj')
+        mock_listen_stream_online = mocker.AsyncMock(side_effect=['topic1'])
+        mock_webhook_obj.listen_stream_online = mock_listen_stream_online
+        test_session.scalar = mocker.MagicMock(return_value=Streamer(streamer_id='666777', streamer_name='streamer1', topic_sub_id='topic1'))
+        test_session.execute = mocker.MagicMock()
+        test_session.add = mocker.MagicMock()
+        test_session.commit = mocker.MagicMock()
+
+        mocker.patch('bot.main.Session', return_value=test_session)
+        await notify(ctx, 'streamer1')
+
+        mock_parse_streamers.assert_called_once_with(('streamer1',))
+        test_session.add.assert_not_called()
+        test_session.commit.assert_called()
+        ctx.send.assert_called_once_with(
+            f'{ctx.author.mention} will now be notified of when the following streamers are live: `streamer1`'
+        )
+
+    async def test_notify_already_subscribed(self, ctx, test_session, mocker):
+        streamer1 = mocker.MagicMock(spec=Streamer)
+        streamer1.id = '789'
+        streamer1.name = 'streamer1'
+
+        clean_streamers = [streamer1]
+
+        mock_parse_streamers = mocker.patch('bot.main.parse_streamers_from_command', return_value=clean_streamers)
+        mocker.patch('bot.main.webhook_obj')
+        test_session.scalar = mocker.MagicMock(return_value=Streamer(streamer_id='789', streamer_name='streamer1', topic_sub_id='topic1'))
+        test_session.execute = mocker.MagicMock(side_effect=IntegrityError(None, None, None))
+        test_session.add = mocker.MagicMock()
+        test_session.rollback = mocker.MagicMock()
+
+        mocker.patch('bot.main.Session', return_value=test_session)
+        await notify(ctx, 'streamer1')
+
+        mock_parse_streamers.assert_called_once_with(('streamer1',))
+        test_session.rollback.assert_called_once()
+        test_session.add.assert_not_called()
+        ctx.send.assert_called_once_with(
+            f'{ctx.author.mention} you are already subscribed to some or all of the streamer(s)! Reverting...'
+        )
+
+    async def test_notify_webhook_obj_not_initialized(self, ctx, mocker):
+        mocker.patch('bot.main.webhook_obj', None)
+
+        with pytest.raises(ValueError, match='Global reference not initialized...'):
+            await notify(ctx, 'streamer1')

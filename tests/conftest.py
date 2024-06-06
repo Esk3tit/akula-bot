@@ -74,6 +74,7 @@ def ctx():
     context.author.name = 'TestUser'
     context.author.display_name = 'TestUser'
     context.author.display_avatar = 'test_avatar_url'
+    context.author.mention = '<@TestUser>'
     return context
 
 
