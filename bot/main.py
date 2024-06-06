@@ -83,7 +83,7 @@ async def on_stream_online(data: StreamOnlineEvent):
                 is_censored = user_sub_obj['is_censored']
                 sfw_context = EmbedCreationContext(SafeForWorkEmbedStrategy())
                 twitch_user = await first(twitch_obj.get_users(user_ids=[data.event.broadcaster_user_id]))
-                sfw_embed = sfw_context.create_embed(
+                sfw_embed = sfw_context.create_embed_custom_images(
                     data,
                     bot.user.name,
                     bot.user.avatar,
@@ -399,7 +399,12 @@ async def test(ctx):
     test_data.event.broadcaster_user_name = "Test"
     test_data.event.started_at = "2021-02-02"
     test_data.event.broadcaster_user_login = "test"
-    embed = SafeForWorkEmbedStrategy().create_embed(test_data, bot.user.name, bot.user.avatar, 'https://preview.redd.it/i-made-steamhappy-vector-image-v0-jmmqmwzwk14c1.png?width=800&format=png&auto=webp&s=7cc8498450fbd323b22899722ac24cbd23a91a83', 'https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/97/b4/77/97b4777d-59c9-f6c9-c4f1-aa58764ce173/artwork.jpg/1200x1200bb.jpg')
+    embed_strategies = [
+        PrigozhinEmbedStrategy()
+    ]
+    selected_embed_strategy = random.choice(embed_strategies)
+    context = EmbedCreationContext(selected_embed_strategy)
+    embed = context.create_embed(test_data, bot.user.name, bot.user.avatar)
     await ctx.send(embed=embed)
 
 

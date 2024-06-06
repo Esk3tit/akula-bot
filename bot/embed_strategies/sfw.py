@@ -1,10 +1,10 @@
 from datetime import datetime
 import discord
 from twitchAPI.object.eventsub import StreamOnlineEvent
-from .base import EmbedCreationStrategy
+from .base import EmbedCreationStrategy, EmbedCreationStrategyDynamicImages
 
 
-class SafeForWorkEmbedStrategy(EmbedCreationStrategy):
+class SafeForWorkEmbedStrategy(EmbedCreationStrategyDynamicImages):
     def create_embed(self,
                      data: StreamOnlineEvent,
                      author_name,

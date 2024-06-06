@@ -2,7 +2,6 @@ from datetime import datetime
 from unittest import mock
 
 import discord
-from twitchAPI.object.eventsub import StreamOnlineEvent, StreamOnlineData
 from bot.embed_strategies.draft import DraftEmbedStrategy
 from bot.embed_strategies.isis import IsisEmbedStrategy
 from bot.embed_strategies.prigozhin import PrigozhinEmbedStrategy

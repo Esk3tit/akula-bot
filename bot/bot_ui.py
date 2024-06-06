@@ -13,9 +13,16 @@ class EmbedCreationContext:
     def create_embed(self,
                      data: StreamOnlineEvent,
                      author_name,
+                     author_icon_url
+                     ) -> discord.Embed:
+        return self._strategy.create_embed(data, author_name, author_icon_url)
+
+    def create_embed_custom_images(self,
+                     data: StreamOnlineEvent,
+                     author_name,
                      author_icon_url,
-                     thumbnail_url: Optional[str] = None,
-                     image_url: Optional[str] = None
+                     thumbnail_url,
+                     image_url
                      ) -> discord.Embed:
         return self._strategy.create_embed(data, author_name, author_icon_url, thumbnail_url, image_url)
 

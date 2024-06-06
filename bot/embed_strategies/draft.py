@@ -11,9 +11,7 @@ class DraftEmbedStrategy(EmbedCreationStrategy):
     def create_embed(self,
                      data: StreamOnlineEvent,
                      author_name,
-                     author_icon_url,
-                     thumbnail_url=thumbnail_url,
-                     image_url=image_url
+                     author_icon_url
                      ) -> discord.Embed:
         embed = discord.Embed(
             color=discord.Color.dark_gold(),
@@ -25,8 +23,8 @@ class DraftEmbedStrategy(EmbedCreationStrategy):
             timestamp=datetime.utcnow()
         )
         embed.set_author(name=author_name, icon_url=author_icon_url)
-        embed.set_thumbnail(url=thumbnail_url)
-        embed.set_image(url=image_url)
+        embed.set_thumbnail(url=DraftEmbedStrategy.thumbnail_url)
+        embed.set_image(url=DraftEmbedStrategy.image_url)
 
         embed.add_field(name='Target', value=f'`{data.event.broadcaster_user_name}`', inline=False)
         embed.add_field(name='Last Seen', value=f'`{data.event.started_at}`')

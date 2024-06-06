@@ -7,12 +7,11 @@ from .base import EmbedCreationStrategy
 class PrigozhinEmbedStrategy(EmbedCreationStrategy):
     thumbnail_url = 'https://i.imgur.com/egYCwpv.jpg'
     image_url = 'https://www.aljazeera.com/wp-content/uploads/2023/08/AP23235625627301-1692854633.jpg?resize=730%2C410&quality=80'
+
     def create_embed(self,
                      data: StreamOnlineEvent,
                      author_name,
-                     author_icon_url,
-                     thumbnail_url=thumbnail_url,
-                     image_url=image_url
+                     author_icon_url
                      ) -> discord.Embed:
         embed = discord.Embed(
             color=discord.Color.dark_magenta(),
@@ -42,8 +41,8 @@ class PrigozhinEmbedStrategy(EmbedCreationStrategy):
             timestamp=datetime.utcnow()
         )
         embed.set_author(name=author_name, icon_url=author_icon_url)
-        embed.set_thumbnail(url=thumbnail_url)
-        embed.set_image(url=image_url)
+        embed.set_thumbnail(url=PrigozhinEmbedStrategy.thumbnail_url)
+        embed.set_image(url=PrigozhinEmbedStrategy.image_url)
 
         embed.add_field(name='Target', value=f'`{data.event.broadcaster_user_name}`', inline=False)
         embed.add_field(name='Last Seen', value=f'`{data.event.started_at}`')
