@@ -1,4 +1,3 @@
-import asyncio
 from unittest.mock import AsyncMock, call
 
 import discord
@@ -9,7 +8,7 @@ from sqlalchemy import select
 
 from bot.bot_ui import ConfigView
 from bot.main import parse_streamers_from_command, on_guild_remove, on_guild_join, notifs, changeconfig, on_ready, \
-    WEBHOOK_URL, notify_error, changeconfig_error, unnotify_error, subscribe_all, on_stream_online, notify
+    WEBHOOK_URL, notify_error, changeconfig_error, unnotify_error, subscribe_all, on_stream_online, notify, unnotify
 from twitchAPI.twitch import Twitch
 
 from bot.models import Guild, UserSubscription, Streamer
@@ -751,3 +750,194 @@ class TestNotify:
 
         with pytest.raises(ValueError, match='Global reference not initialized...'):
             await notify(ctx, 'streamer1')
+
+
+@pytest.mark.asyncio
+class TestUnnotify:
+    async def test_unnotify_success(self, ctx, test_session, mocker):
+        streamer1 = mocker.MagicMock(spec=Streamer)
+        streamer1.id = '789'
+        streamer1.name = 'streamer1'
+        streamer1.topic_sub_id = 'topic1'
+
+        clean_streamers = [streamer1]
+
+        mock_parse_streamers = mocker.patch('bot.main.parse_streamers_from_command', return_value=clean_streamers)
+        mock_webhook_obj = mocker.patch('bot.main.webhook_obj')
+        mock_unsubscribe_topic = mocker.AsyncMock(return_value=True)
+        mock_webhook_obj.unsubscribe_topic = mock_unsubscribe_topic
+
+        user_sub = mocker.MagicMock(spec=UserSubscription)
+        user_sub.streamer = mocker.MagicMock(spec=Streamer)
+        user_sub.streamer.streamer_name = 'streamer1'
+
+        test_session.scalar = mocker.MagicMock(side_effect=[user_sub, streamer1])
+        test_session.scalars = mocker.MagicMock()
+        test_session.delete = mocker.MagicMock()
+        test_session.commit = mocker.MagicMock()
+        test_session.scalars.return_value.first.return_value = None
+
+        mocker.patch('bot.main.Session', return_value=test_session)
+        await unnotify(ctx, 'streamer1')
+
+        mock_parse_streamers.assert_called_once_with(('streamer1',))
+        test_session.delete.assert_any_call(user_sub)
+        mock_unsubscribe_topic.assert_called_once()
+        test_session.commit.assert_called_once()
+        ctx.send.assert_called_once_with(
+            '<@TestUser> You will no longer be notified for: `streamer1`!'
+        )
+
+    async def test_unnotify_success_streamer_not_deleted(self, ctx, test_session, mocker):
+        streamer1 = mocker.MagicMock(spec=Streamer)
+        streamer1.id = '789'
+        streamer1.name = 'streamer1'
+
+        clean_streamers = [streamer1]
+
+        mock_parse_streamers = mocker.patch('bot.main.parse_streamers_from_command', return_value=clean_streamers)
+        mock_webhook_obj = mocker.patch('bot.main.webhook_obj')
+        mock_unsubscribe_topic = mocker.AsyncMock(return_value=True)
+        mock_webhook_obj.unsubscribe_topic = mock_unsubscribe_topic
+
+        user_sub = mocker.MagicMock(spec=UserSubscription)
+        user_sub.streamer = mocker.MagicMock(spec=Streamer)
+        user_sub.streamer.streamer_name = 'streamer1'
+        user_sub.streamer.topic_sub_id = 'topic1'
+
+        test_session.scalar = mocker.MagicMock(side_effect=[user_sub])
+        test_session.scalars = mocker.MagicMock()
+        test_session.delete = mocker.MagicMock()
+        test_session.commit = mocker.MagicMock()
+        test_session.scalars.return_value.first.return_value = user_sub
+
+        mocker.patch('bot.main.Session', return_value=test_session)
+        await unnotify(ctx, 'streamer1')
+
+        mock_parse_streamers.assert_called_once_with(('streamer1',))
+        test_session.delete.assert_called_once_with(user_sub)
+        mock_unsubscribe_topic.assert_not_called()
+        test_session.commit.assert_called_once()
+        ctx.send.assert_called_once_with(
+            '<@TestUser> You will no longer be notified for: `streamer1`!'
+        )
+
+    async def test_unnotify_fail(self, ctx, test_session, mocker):
+        streamer1 = mocker.MagicMock(spec=Streamer)
+        streamer1.id = '789'
+        streamer1.name = 'streamer1'
+
+        clean_streamers = [streamer1]
+
+        mock_parse_streamers = mocker.patch('bot.main.parse_streamers_from_command', return_value=clean_streamers)
+        mock_webhook_obj = mocker.patch('bot.main.webhook_obj')
+        mock_unsubscribe_topic = mocker.AsyncMock(return_value=True)
+        mock_webhook_obj.unsubscribe_topic = mock_unsubscribe_topic
+
+        test_session.scalar = mocker.MagicMock(return_value=None)
+
+        mocker.patch('bot.main.Session', return_value=test_session)
+        await unnotify(ctx, 'streamer1')
+
+        mock_parse_streamers.assert_called_once_with(('streamer1',))
+        ctx.send.assert_called_once_with(
+            '<@TestUser> Unable to unsubscribe from: `streamer1`!'
+        )
+
+    async def test_unnotify_streamer_not_found(self, ctx, test_session, mocker):
+        mock_parse_streamers = mocker.patch('bot.main.parse_streamers_from_command', return_value=[])
+        mocker.patch('bot.main.webhook_obj')
+
+        await unnotify(ctx, 'streamer1')
+
+        mock_parse_streamers.assert_called_once_with(('streamer1',))
+        ctx.send.assert_called_once_with(
+            '<@TestUser> Unable to find given streamer, please try again... MAGGOT!'
+        )
+
+    async def test_unnotify_webhook_obj_not_initialized(self, ctx, mocker):
+        mocker.patch('bot.main.webhook_obj', None)
+
+        with pytest.raises(ValueError, match='Global reference not initialized...'):
+            await unnotify(ctx, 'streamer1')
+
+    async def test_unnotify_mix_success_fail(self, ctx, test_session, mocker):
+        streamer1 = mocker.MagicMock(spec=Streamer)
+        streamer1.id = '789'
+        streamer1.name = 'streamer1'
+        streamer1.topic_sub_id = 'topic1'
+
+        streamer2 = mocker.MagicMock(spec=Streamer)
+        streamer2.id = '012'
+        streamer2.name = 'streamer2'
+        streamer2.topic_sub_id = 'topic2'
+
+        clean_streamers = [streamer1, streamer2]
+
+        mock_parse_streamers = mocker.patch('bot.main.parse_streamers_from_command', return_value=clean_streamers)
+        mock_webhook_obj = mocker.patch('bot.main.webhook_obj')
+        mock_unsubscribe_topic = mocker.AsyncMock(return_value=True)
+        mock_webhook_obj.unsubscribe_topic = mock_unsubscribe_topic
+
+        user_sub = mocker.MagicMock(spec=UserSubscription)
+        user_sub.streamer = mocker.MagicMock(spec=Streamer)
+        user_sub.streamer.streamer_name = 'streamer1'
+
+        test_session.scalar = mocker.MagicMock(side_effect=[user_sub, streamer1, None])
+        test_session.scalars = mocker.MagicMock()
+        test_session.delete = mocker.MagicMock()
+        test_session.commit = mocker.MagicMock()
+        test_session.scalars.return_value.first.return_value = None
+
+        mocker.patch('bot.main.Session', return_value=test_session)
+        await unnotify(ctx, 'streamer1', 'streamer2')
+
+        mock_parse_streamers.assert_called_once_with(('streamer1', 'streamer2'))
+        test_session.delete.assert_any_call(user_sub)
+        mock_unsubscribe_topic.assert_called_once()
+        test_session.commit.assert_called_once()
+        ctx.send.assert_any_call(
+            '<@TestUser> You will no longer be notified for: `streamer1`!'
+        )
+        ctx.send.assert_any_call(
+            '<@TestUser> Unable to unsubscribe from: `streamer2`!'
+        )
+
+    async def test_unnotify_unsubscribe_topic_error(self, ctx, test_session, mocker):
+        streamer1 = mocker.MagicMock(spec=Streamer)
+        streamer1.id = '789'
+        streamer1.name = 'streamer1'
+        streamer1.streamer_name = 'streamer1'
+        streamer1.topic_sub_id = 'topic1'
+
+        clean_streamers = [streamer1]
+
+        mock_parse_streamers = mocker.patch('bot.main.parse_streamers_from_command', return_value=clean_streamers)
+        mock_webhook_obj = mocker.patch('bot.main.webhook_obj')
+        mock_unsubscribe_topic = mocker.AsyncMock(return_value=False)
+        mock_webhook_obj.unsubscribe_topic = mock_unsubscribe_topic
+
+        user_sub = mocker.MagicMock(spec=UserSubscription)
+        user_sub.streamer = mocker.MagicMock(spec=Streamer)
+        user_sub.streamer.streamer_name = 'streamer1'
+
+        test_session.scalar = mocker.MagicMock(side_effect=[user_sub, streamer1])
+        test_session.scalars = mocker.MagicMock()
+        test_session.delete = mocker.MagicMock()
+        test_session.commit = mocker.MagicMock()
+        test_session.scalars.return_value.first.return_value = None
+
+        mock_print = mocker.patch('builtins.print')
+
+        mocker.patch('bot.main.Session', return_value=test_session)
+        await unnotify(ctx, 'streamer1')
+
+        mock_parse_streamers.assert_called_once_with(('streamer1',))
+        test_session.delete.assert_any_call(user_sub)
+        mock_unsubscribe_topic.assert_called_once_with('topic1')
+        test_session.commit.assert_called_once()
+        mock_print.assert_any_call("unsubbing topic topic1 from streamer streamer1")
+        mock_print.assert_any_call("failed to unsubscribe from streamer through API!")
+        ctx.send.assert_called_once_with(
+            '<@TestUser> You will no longer be notified for: `streamer1`!'
+        )
