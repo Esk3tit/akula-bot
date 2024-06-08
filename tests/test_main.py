@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock, call
 
 import discord
@@ -572,17 +573,18 @@ class TestChangeConfig:
 
 @pytest.mark.asyncio
 class TestOnReady:
+
     async def test_on_ready_successful(self, bot, mocker):
         mock_print = mocker.patch('builtins.print')
         mocker.patch('bot.main.bot', new=bot)
         mock_bot_tree_sync = mocker.patch('bot.main.bot.tree.sync', new_callable=AsyncMock)
-        twitch_obj_mock = mocker.patch('bot.main.twitch_obj', new=mocker.MagicMock())
-        mocker.patch('bot.main.webhook_obj', new=mocker.MagicMock())
-        mocker.patch('twitchAPI.eventsub.webhook.EventSubWebhook',
-                     mocker.MagicMock(spec=EventSubWebhook,
-                                      callback_url=WEBHOOK_URL, port=8080, twitch=twitch_obj_mock,
-                                      start=AsyncMock))
+        mocker.patch('bot.main.twitch_obj', new=mocker.MagicMock())
+        mock_webhook_class = mocker.patch('bot.main.EventSubWebhook')
+        mock_webhook_instance = mock_webhook_class.return_value
+        mock_webhook_instance.start = mocker.MagicMock(side_effect=lambda: asyncio.sleep(0))
+        mock_webhook_instance.unsubscribe_all = AsyncMock()
         mock_subscribe_all = mocker.patch('bot.main.subscribe_all', new_callable=AsyncMock)
+
         await on_ready()
 
         mock_print.assert_has_calls([
@@ -591,13 +593,18 @@ class TestOnReady:
             call("Successfully subscribed to all streamers in the DB!")
         ])
         mock_bot_tree_sync.assert_called_once()
-        mock_subscribe_all.assert_called_once()
+        mock_webhook_class.assert_called_once_with(WEBHOOK_URL, 8080, mocker.ANY)
+        assert mock_webhook_instance.unsubscribe_on_stop is False
+        mock_webhook_instance.unsubscribe_all.assert_called_once()
+        mock_webhook_instance.start.assert_called_once()
+        mock_subscribe_all.assert_called_once_with(mock_webhook_instance)
 
     async def test_on_ready_invalid_twitch_credentials(self, bot, mocker):
         mock_print = mocker.patch('builtins.print')
         mocker.patch('bot.main.bot', new=bot)
         mocker.patch('bot.main.bot.tree.sync', new_callable=AsyncMock)
         mocker.patch('bot.main.Twitch', AsyncMock(side_effect=Exception("Invalid credentials")))
+        mocker.patch('bot.main.EventSubWebhook')
 
         try:
             await on_ready()
