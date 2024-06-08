@@ -1,6 +1,3 @@
-from sqlalchemy import Engine
-from sqlalchemy.orm import Session
-from discord.ext.commands import Context
 from bot.bot_utils import validate_streamer_ids_get_names, streamer_get_ids_names_from_logins, \
     get_first_sendable_text_channel, is_owner, is_owner_or_optin_mode
 from twitchAPI.twitch import Twitch
@@ -13,10 +10,10 @@ import discord
 from bot.models import GetUsersStreamer
 
 
+@pytest.mark.asyncio
 class TestStreamerGetIdsFromLogins:
 
     #  Returns a list of GetUsersStreamers when given a list of valid broadcaster logins
-    @pytest.mark.asyncio
     async def test_valid_broadcaster_logins(self, mocker):
         # Mock Twitch API response
         mock_twitch = mocker.Mock(spec=Twitch)
@@ -43,7 +40,6 @@ class TestStreamerGetIdsFromLogins:
         mock_twitch.get_users.assert_called_once_with(logins=mock_logins)
 
     #  Returns an empty list when given a list of invalid broadcaster logins
-    @pytest.mark.asyncio
     async def test_invalid_broadcaster_logins(self, mocker):
         # Mock Twitch API response
         mock_twitch = mocker.Mock(spec=Twitch)
@@ -59,7 +55,6 @@ class TestStreamerGetIdsFromLogins:
         mock_twitch.get_users.assert_called_once_with(logins=mock_invalid_logins)
 
     #  Returns an empty list when given a single invalid broadcaster login
-    @pytest.mark.asyncio
     async def test_single_invalid_broadcaster_login(self, mocker):
         # Mock Twitch API response
         mock_twitch = mocker.Mock()
@@ -75,7 +70,6 @@ class TestStreamerGetIdsFromLogins:
         mock_twitch.get_users.assert_called_once_with(logins=mock_invalid_login)
 
     #  Returns a list of GetUsersStreamers when given a single valid broadcaster login
-    @pytest.mark.asyncio
     async def test_single_valid_broadcaster_login(self, mocker):
         # Mock Twitch API response
         mock_twitch = mocker.Mock(spec=Twitch)
@@ -97,10 +91,10 @@ class TestStreamerGetIdsFromLogins:
         mock_twitch.get_users.assert_called_once_with(logins=mock_login)
 
 
+@pytest.mark.asyncio
 class TestValidateStreamerIds:
 
     #  The function returns a list of GetUsersStreamers when given a valid list of user ids.
-    @pytest.mark.asyncio
     async def test_valid_user_ids(self, mocker):
         # Mock the Twitch API response
         mock_twitch = mocker.Mock(spec=Twitch)
@@ -127,7 +121,6 @@ class TestValidateStreamerIds:
         mock_twitch.get_users.assert_called_once_with(user_ids=mock_ids)
 
     # The function returns a list of a single GetUsersStreamer when given a list of a single valid id
-    @pytest.mark.asyncio
     async def test_valid_user_id(self, mocker):
         # Mock the Twitch API response
         mock_twitch = mocker.Mock(spec=Twitch)
@@ -149,7 +142,6 @@ class TestValidateStreamerIds:
         mock_twitch.get_users.assert_called_once_with(user_ids=mock_id)
 
     #  The function returns an empty list when given a list of invalid user ids.
-    @pytest.mark.asyncio
     async def test_invalid_user_ids(self, mocker):
         # Mock the Twitch API response
         mock_twitch = mocker.Mock(spec=Twitch)
@@ -165,7 +157,6 @@ class TestValidateStreamerIds:
 
     #  The function returns an empty list when given a list of valid and invalid user ids.
     #  The invalid ids result in exception, so even with valid ids mixed in the entire API call is invalid
-    @pytest.mark.asyncio
     async def test_valid_and_invalid_ids(self, mocker):
         # Mock the Twitch API response for get_users
         mock_twitch = mocker.Mock(spec=Twitch)
@@ -271,72 +262,47 @@ class TestIsOwner:
         assert result is False
 
 
+@pytest.mark.asyncio
 class TestIsOwnerOrOptinMode:
-    @pytest.fixture
-    def ctx_mock(self, mocker):
-        ctx = mocker.Mock(spec=Context)
-        ctx.guild.id = 123
-        ctx.author.id = 456
-        ctx.guild.owner.id = 789
-        return ctx
-
-    @pytest.fixture
-    def session_mock(self, mocker):
-        session = mocker.MagicMock(spec=Session)
-        mocker.patch('bot.bot_utils.Session', return_value=session)
-        return session
-
-    @pytest.fixture
-    def engine_mock(self, mocker):
-        engine = mocker.MagicMock(spec=Engine)
-        return engine
 
     # returns True if guild notification mode is 'optin' and author is not guild owner
-    @pytest.mark.asyncio
-    async def test_optin_mode_not_owner(self, ctx_mock, session_mock, engine_mock):
-        session_mock.__enter__.return_value = session_mock
-        session_mock.__exit__.return_value = None
-        session_mock.scalar.return_value = 'optin'
+    async def test_optin_mode_not_owner(self, ctx, test_session, test_engine, mocker):
+        test_session.scalar = mocker.MagicMock(return_value='optin')
+        mocker.patch('bot.bot_utils.Session', return_value=test_session)
 
-        check_function = is_owner_or_optin_mode(engine_mock).predicate
-        result = await check_function(ctx_mock)
+        check_function = is_owner_or_optin_mode(test_engine).predicate
+        result = await check_function(ctx)
 
         assert result is True
 
     # returns True if guild notification mode is not 'optin' and author is guild owner
-    @pytest.mark.asyncio
-    async def test_global_mode_and_author_is_owner(self, ctx_mock, session_mock, engine_mock):
-        session_mock.__enter__.return_value = session_mock
-        session_mock.__exit__.return_value = None
-        session_mock.scalar.return_value = 'global'
-        ctx_mock.author.id = ctx_mock.guild.owner.id
+    async def test_global_mode_and_author_is_owner(self, ctx, test_session, test_engine, mocker):
+        ctx.guild.owner.id = ctx.author.id
+        test_session.scalar = mocker.MagicMock(return_value='global')
+        mocker.patch('bot.bot_utils.Session', return_value=test_session)
 
-        check_function = is_owner_or_optin_mode(engine_mock).predicate
-        result = await check_function(ctx_mock)
+        check_function = is_owner_or_optin_mode(test_engine).predicate
+        result = await check_function(ctx)
 
         assert result is True
 
     # returns False if guild notification mode is not 'optin' and author is not guild owner
-    @pytest.mark.asyncio
-    async def test_returns_false_if_not_optin_and_not_owner(self, ctx_mock, session_mock, engine_mock):
-        session_mock.__enter__.return_value = session_mock
-        session_mock.__exit__.return_value = None
-        session_mock.scalar.return_value = 'passive'
+    async def test_returns_false_if_not_optin_and_not_owner(self, ctx, test_session, test_engine, mocker):
+        test_session.scalar = mocker.MagicMock(return_value='passive')
+        mocker.patch('bot.bot_utils.Session', return_value=test_session)
 
-        check_function = is_owner_or_optin_mode(engine_mock).predicate
-        result = await check_function(ctx_mock)
+        check_function = is_owner_or_optin_mode(test_engine).predicate
+        result = await check_function(ctx)
 
         assert result is False
 
     # returns True if guild notification mode is 'optin' and author is guild owner
-    @pytest.mark.asyncio
-    async def test_optin_mode_and_owner(self, ctx_mock, session_mock, engine_mock):
-        session_mock.__enter__.return_value = session_mock
-        session_mock.__exit__.return_value = None
-        session_mock.scalar.return_value = 'optin'
-        ctx_mock.author.id = ctx_mock.guild.owner.id
+    async def test_optin_mode_and_owner(self, ctx, test_session, test_engine, mocker):
+        ctx.guild.owner.id = ctx.author.id
+        test_session.scalar = mocker.MagicMock(return_value='optin')
+        mocker.patch('bot.bot_utils.Session', return_value=test_session)
 
-        check_function = is_owner_or_optin_mode(engine_mock).predicate
-        result = await check_function(ctx_mock)
+        check_function = is_owner_or_optin_mode(test_engine).predicate
+        result = await check_function(ctx)
 
         assert result is True
