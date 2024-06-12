@@ -47,6 +47,19 @@ webhook_obj: EventSubWebhook | None = None
 
 
 async def on_stream_online(data: StreamOnlineEvent):
+    """
+    Handle the event when a streamer goes online. Selects a random embed strategy from a list of strategies and creates an embed using the selected strategy.
+    Fetches data on servers and users to notify for the streamer going online, based on their subscriptions.
+    Generates a SafeForWork embed if the notification mode is 'global' or 'passive' and the server is censored.
+    Notifies users in each server based on their notification mode and subscription status.
+
+    Parameters:
+    - data (StreamOnlineEvent): The event data for the streamer going online.
+
+    Returns:
+    - None
+    """
+
     embed_strategies = [
         DraftEmbedStrategy(),
         IsisEmbedStrategy(),
@@ -113,10 +126,15 @@ async def on_stream_online(data: StreamOnlineEvent):
 
 async def subscribe_all(webhook):
     """
-    Get all streamers from DB and subscribe to them
-    using the Twitch API webhook (param)
+    Execute a database session to iterate over all Streamer objects,
+    updating their topic_sub_id attribute by calling the webhook's listen_stream_online method with the streamer's ID
+    and the on_stream_online callback function. Finally, commit the changes made in the session.
 
-    :return: None
+    Parameters:
+    - webhook (EventSubWebhook): The event data for the streamer going online.
+
+    Returns:
+    - None
     """
     with Session(engine) as session:
         for s in session.scalars(select(Streamer)).all():
@@ -125,6 +143,21 @@ async def subscribe_all(webhook):
 
 
 async def parse_streamers_from_command(streamers):
+    """
+    Parse the given list of streamers to extract valid streamer IDs and names.
+
+    Parameters:
+    - streamers (list): A list of strings representing streamer IDs, streamer names, or Twitch URLs.
+
+    Returns:
+    - list: A list of valid streamer IDs and names extracted from the input streamers.
+
+    Raises:
+    - ValueError: If the global variable 'twitch_obj' is not initialized.
+
+    The function first checks if the 'twitch_obj' global variable is initialized. Then, it iterates over the input streamers to identify streamer IDs, streamer names, and Twitch URLs. It validates the streamer IDs using the 'validate_streamer_ids_get_names' function and converts streamer names to IDs using the 'streamer_get_ids_names_from_logins' function. Finally, it returns a list of valid streamer IDs and names extracted from the input streamers.
+    """
+
     if twitch_obj is None:
         raise ValueError("Global variable not initialized.")
     res = set()
@@ -163,6 +196,16 @@ async def parse_streamers_from_command(streamers):
 
 @bot.event
 async def on_guild_join(guild: discord.Guild):
+    """
+    Async function to handle actions when the bot joins a new guild.
+
+    Parameters:
+    - guild (discord.Guild): The guild that the bot has joined.
+
+    Returns:
+    - None
+    """
+
     # Send message to first available text channel (top to bottom)
     # to configure, if no permission channel then send DM to owner
     channel = get_first_sendable_text_channel(guild)
@@ -200,6 +243,16 @@ async def on_guild_join(guild: discord.Guild):
 
 @bot.event
 async def on_guild_remove(guild: discord.Guild):
+    """
+    Remove a guild from the database and cascade delete related entries in the user subscriptions table and potentially in the streamer table.
+
+    Parameters:
+    - guild (discord.Guild): The guild to be removed from the database.
+
+    Returns:
+    - None
+    """
+
     # Remove guild from guilds DB, don't have objects of guild
     # so need to do it with Core/non-Unit of Work pattern
     with Session(engine) as session:
@@ -219,6 +272,17 @@ async def on_guild_remove(guild: discord.Guild):
 @bot.command(name='notify', description='Get notified when a streamer goes live!')
 @is_owner_or_optin_mode(engine)
 async def notify(ctx, *streamers):
+    """
+    Notify users about the given streamers and handle subscriptions.
+
+    Parameters:
+    - ctx: The context of the command invocation.
+    - *streamers: Variable number of streamers to notify users about.
+
+    Returns:
+    - None
+    """
+
     if webhook_obj is None:
         raise ValueError('Global reference not initialized...')
     clean_streamers = await parse_streamers_from_command(streamers)
@@ -262,6 +326,16 @@ async def notify(ctx, *streamers):
 
 @notify.error
 async def notify_error(ctx, error):
+    """
+    Prints the error message and sends a permission denial message to the user.
+
+    Parameters:
+    - error: The error message to be printed.
+
+    Returns:
+    - None
+    """
+
     print(error)
     await ctx.send(
         f"{ctx.author.mention} You don't have permission to use this command...",
@@ -272,6 +346,22 @@ async def notify_error(ctx, error):
 @bot.command(name='unnotify', description='Unsubscribe from notification when a streamer goes live!')
 @is_owner_or_optin_mode(engine)
 async def unnotify(ctx, *streamers):
+    """
+    Unnotify users from receiving notifications for specific streamers.
+
+    Parameters:
+    - ctx (Context): The context of the command.
+    - *streamers (str): Variable number of strings representing streamer IDs, streamer names, or Twitch URLs.
+
+    Returns:
+    - None
+
+    Raises:
+    - ValueError: If the global variable 'webhook_obj' is not initialized.
+
+    The function checks if the 'webhook_obj' global variable is initialized. It then parses the input streamers to extract valid streamer IDs and names. For each streamer, it checks if the user is subscribed and removes the subscription. If no references to the streamer remain, it unsubscribes from the streamer's topic. Finally, it sends messages to the user indicating success or failure of the unsubscription process.
+    """
+
     if webhook_obj is None:
         raise ValueError('Global reference not initialized...')
     success = []
@@ -318,6 +408,19 @@ async def unnotify(ctx, *streamers):
 
 @unnotify.error
 async def unnotify_error(ctx, error):
+    """
+    Unnotify users from receiving notifications for specific streamers.
+
+    Parameters:
+    - ctx (Context): The context of the command.
+    - error (Exception): The error that occurred during the unnotify process.
+
+    Returns:
+    - None
+
+    The function prints the error message and sends a response to the user indicating that they do not have permission to use the command.
+    """
+
     print(error)
     await ctx.send(
         f"{ctx.author.mention} You don't have permission to use this command...",
@@ -327,6 +430,16 @@ async def unnotify_error(ctx, error):
 
 @bot.hybrid_command(name='notifs', description='Get current streamers that you are getting notifications for.')
 async def notifs(ctx):
+    """
+    Function to display notification subscriptions for a user in a specific guild.
+
+    Parameters:
+    - ctx (discord.ext.commands.Context): The context object representing the invocation context of the command.
+
+    Returns:
+    - None
+    """
+
     with Session(engine) as session:
         notified_streamers = session.scalars(
             select(Streamer.streamer_name).join(Streamer.user_subscriptions).where(
@@ -354,6 +467,16 @@ async def notifs(ctx):
 @bot.hybrid_command(name='changeconfig', description='Change configuration of the bot server-wide.')
 @app_commands.check(is_owner)
 async def changeconfig(ctx):
+    """
+    Change configuration of the bot server-wide.
+
+    Parameters:
+    - ctx (discord.Context): The context of the command invocation.
+
+    Returns:
+    - None
+    """
+
     with Session(engine) as session:
         guild_config = session.scalar(select(Guild).where(Guild.guild_id == str(ctx.guild.id)))
         embed = create_config_embed(bot.get_channel(int(guild_config.notification_channel_id)).name,
@@ -385,6 +508,17 @@ async def changeconfig(ctx):
 
 @changeconfig.error
 async def changeconfig_error(ctx, error):
+    """
+    Change configuration error handler function.
+
+    Parameters:
+    - ctx (discord.Context): The context of the command invocation.
+    - error (Exception): The error that occurred during the execution of the command.
+
+    Returns:
+    - None
+    """
+
     print(error)
     await ctx.send(
         f"{ctx.author.mention} You don't have permission to use this command...",
@@ -410,6 +544,17 @@ async def test(ctx):
 
 @bot.event
 async def on_ready():
+    """
+    Handle the event when the bot is ready and connected to Discord.
+    Initialize the Twitch API client, set up the EventSub webhook, subscribe to streamers, and synchronize the bot's internal state.
+
+    Parameters:
+    - None
+
+    Returns:
+    - None
+    """
+
     print(f'{bot.user.name} has connected to Discord!')
     twitch = await Twitch(client_id, client_secret)
     global twitch_obj
