@@ -7,6 +7,20 @@ from twitchAPI.object.eventsub import StreamOnlineEvent
 
 
 class EmbedCreationContext:
+    """
+    Class representing a context for creating Discord embeds.
+
+    Parameters:
+    - strategy: The strategy object used for creating the embeds.
+
+    Attributes:
+    - _strategy: The strategy object used for creating the embeds.
+
+    Methods:
+    - create_embed(data, author_name, author_icon_url): Creates a Discord embed using the provided data, author name, and author icon URL.
+    - create_embed_custom_images(data, author_name, author_icon_url, thumbnail_url, image_url): Creates a Discord embed with custom thumbnail and image URLs.
+    """
+
     def __init__(self, strategy):
         self._strategy = strategy
 
@@ -36,6 +50,22 @@ def create_config_embed(
         embed_author: str,
         embed_author_icon: discord.Asset
 ) -> discord.Embed:
+    """
+    Create an embed for configuring the bot.
+
+    Parameters:
+    - channel_name (str): The name of the current notification channel.
+    - channel_mode (str): The mode of the current notification channel.
+    - is_censored (str): The current SFW/Censorship notification status.
+    - author_name (str): The name of the author.
+    - author_icon_url (discord.Asset): The icon URL of the author.
+    - embed_author (str): The name of the embed author.
+    - embed_author_icon (discord.Asset): The icon URL of the embed author.
+
+    Returns:
+    - discord.Embed: The embed created for configuring the bot.
+    """
+
     embed = discord.Embed(
         title="What's up chat! 👋",
         description="Use the select menu options below to configure me for your server and then hit Save!",
@@ -56,6 +86,20 @@ def create_config_confirmation_embed(
         author_name: str,
         author_icon_url: discord.Asset,
 ) -> discord.Embed:
+    """
+    Creates an embed for confirming the configuration settings.
+
+    Parameters:
+    - channel_name (str): The name of the notification channel.
+    - channel_mode (str): The mode of the notification channel.
+    - is_censored (str): Indicates if the notifications are censored or not.
+    - author_name (str): The name of the author.
+    - author_icon_url (discord.Asset): The URL of the author's icon.
+
+    Returns:
+    - discord.Embed: An embed displaying the configuration settings.
+    """
+
     embed = discord.Embed(title='Akula Bot Configuration',
                           description=f'The following settings have been saved...',
                           timestamp=datetime.now(), color=discord.Color.green())
@@ -67,6 +111,36 @@ def create_config_confirmation_embed(
 
 
 class ConfigView(discord.ui.View):
+    """
+    Represents a custom Discord UI view for configuring bot settings.
+
+    Parameters:
+    - owner_id (int): The ID of the owner of the configuration view.
+    - embed_author (discord.ClientUser): The author of the embed associated with the configuration.
+    - guild (discord.Guild): The guild where the configuration is taking place.
+    - timeout (Optional[int]): The timeout duration for the view.
+
+    Attributes:
+    - owner_id (int): The ID of the owner of the configuration view.
+    - embed_author (discord.ClientUser): The author of the embed associated with the configuration.
+    - guild (discord.Guild): The guild where the configuration is taking place.
+    - channel (Optional[discord.TextChannel]): The selected notification channel.
+    - message (Optional[discord.Message]): The message associated with the view.
+    - notification_mode (str): The selected notification mode ('optin', 'global', 'passive').
+    - is_censored (bool): Indicates if notifications are censored or not.
+
+    Methods:
+    - disable_all_items(): Disables all items in the view.
+    - select_channels(interaction, select): Selects a notification channel.
+    - select_mode(interaction, select): Selects a notification mode.
+    - select_censorship(interaction, select): Selects whether notifications are censored.
+    - save_config(interaction, button): Saves the configuration settings and displays a confirmation message.
+    - interaction_check(interaction: Interaction) -> bool: Checks if the interaction user is the owner of the view.
+
+    Returns:
+    - None
+    """
+
     def __init__(
             self,
             owner_id,
