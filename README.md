@@ -1,5 +1,9 @@
 # Akula Bot
 
+---
+
+<img src="images/akula.png" width=200px height=auto alt="Akula Bot logo">
+
 Akula Bot is a powerful and versatile Discord bot designed to enhance your server's functionality and user experience. With its advanced features and seamless integration with the Twitch API, Akula Bot allows you to stay up-to-date with your favorite streamers and receive real-time notifications when they go live.
 
 ## Features
@@ -8,6 +12,16 @@ Akula Bot is a powerful and versatile Discord bot designed to enhance your serve
 - **Customizable Notification Modes**: Choose between opt-in, global, and passive notification modes to tailor the bot's behavior to your server's preferences.
 - **Easy Configuration**: Server owners can easily configure the bot's settings using intuitive commands and a user-friendly interface.
 - **Secure and Reliable**: Akula Bot is built with security and reliability in mind, ensuring a stable and trustworthy experience for your server.
+
+## Tech Stack
+
+- Python 3.11
+- discord.py: A powerful library for building Discord bots in Python.
+- SQLAlchemy: A popular SQL toolkit and Object-Relational Mapping (ORM) library for Python.
+- PostgreSQL (psycopg 3 driver): A robust and feature-rich open-source relational database management system.
+- pytest: A mature and extensive testing framework for Python projects.
+- Alembic: A lightweight database migration tool for SQLAlchemy.
+- twitchAPI: A Python wrapper for the Twitch API, enabling seamless integration with Twitch functionality.
 
 ## Adding Akula Bot to Your Server
 
@@ -26,6 +40,8 @@ Akula Bot offers a range of configuration options to customize its behavior and 
 
 - `!changeconfig`: Opens the configuration menu, allowing you to modify the bot's settings, such as the notification channel and notification mode.
 
+![configuration view example](images/changeconfig.png)
+
 The bot supports three notification modes:
 
 1. **Opt-In**: Users must manually opt-in to receive notifications for specific streamers using the `!notify` command. Notifications will mention users individually.
@@ -33,6 +49,9 @@ The bot supports three notification modes:
 3. **Passive**: The bot will post notifications in the designated notification channel without mentioning anyone.
 
 Note: In the opt-in mode, users can use the `!notify` and `!unnotify` commands to manage their streamer subscriptions. In the global and passive modes, only the server owner can use these commands.
+
+The bot also supports a Safe For Work (SFW) notification mode which can be enabled and disabled at the server
+owner's discretion.
 
 ## Commands
 
