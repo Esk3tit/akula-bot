@@ -1,5 +1,6 @@
 import asyncio
 from unittest.mock import AsyncMock, call
+from collections import namedtuple
 
 import discord
 import pytest
@@ -7,7 +8,8 @@ from sqlalchemy.exc import IntegrityError
 from twitchAPI.eventsub.webhook import EventSubWebhook
 from sqlalchemy import select
 
-from bot.bot_ui import ConfigView
+from bot.bot_ui import ConfigView, EmbedCreationContext
+from bot.embed_strategies.draft import DraftEmbedStrategy
 from bot.main import parse_streamers_from_command, on_guild_remove, on_guild_join, notifs, changeconfig, on_ready, \
     WEBHOOK_URL, notify_error, changeconfig_error, unnotify_error, subscribe_all, on_stream_online, notify, unnotify
 from twitchAPI.twitch import Twitch
@@ -19,6 +21,16 @@ from bot.models import Guild, UserSubscription, Streamer
 class TestOnStreamOnline:
     async def test_on_stream_online_global_mode_with_mention_everyone_permission(self, mocker, test_session, bot,
                                                                                  mock_stream_online_data):
+        # Mock the random.choice function to always return a specific embed strategy
+        mock_embed_strategy = mocker.MagicMock(spec=DraftEmbedStrategy)
+        mocker.patch('bot.main.random.choice', return_value=mock_embed_strategy)
+
+        # Create a mock EmbedCreationContext that returns a mock embed
+        mock_embed = mocker.MagicMock(spec=discord.Embed)
+        mock_context = mocker.MagicMock(spec=EmbedCreationContext)
+        mock_context.create_embed.return_value = mock_embed
+        mocker.patch('bot.main.EmbedCreationContext', return_value=mock_context)
+
         guild = mocker.MagicMock(spec=discord.Guild)
         guild.id = 123
         guild.owner_id = 456
@@ -27,6 +39,7 @@ class TestOnStreamOnline:
 
         channel = mocker.MagicMock(spec=discord.TextChannel)
         channel.id = 789
+        channel.send = AsyncMock()
 
         bot.get_channel.return_value = channel
         bot.get_guild.return_value = guild
@@ -35,34 +48,57 @@ class TestOnStreamOnline:
         mocker.patch('bot.main.Session', return_value=test_session)
         mocker.patch('bot.main.bot', new=bot)
 
+        # Create a mock Twitch user with the profile_image_url attribute
+        mock_twitch_user = mocker.MagicMock()
+        mock_twitch_user.profile_image_url = "https://example.com/profile.png"
+
+        # Create an asynchronous generator that yields the mock Twitch user
+        async def mock_get_users(*args, **kwargs):
+            yield mock_twitch_user
+
         mock_twitch_obj = mocker.MagicMock()
-        mock_twitch_obj.get_users = AsyncMock()
+        mock_twitch_obj.get_users.return_value = mock_get_users()
         mocker.patch('bot.main.twitch_obj', new=mock_twitch_obj)
+
+        # Create a named tuple to mimic the structure of the rows returned by session.execute().all()
+        Row = namedtuple('Row', ['guild', 'user_id'])
+        guild_mock = mocker.MagicMock(spec=Guild)
+        guild_mock.guild_id = '123'
+        guild_mock.notification_channel_id = '789'
+        guild_mock.notification_mode = 'global'
+        guild_mock.is_censored = False
+        row = Row(guild=guild_mock, user_id='456')
 
         stmt = mocker.MagicMock()
         test_session.execute = mocker.MagicMock()
-        test_session.execute.return_value.all.return_value = [
-            (guild, 456),
-        ]
+        test_session.execute.return_value.all.return_value = [row]
 
         mocker.patch('bot.main.select', return_value=stmt)
-        mocker.patch('bot.main.asyncio.run_coroutine_threadsafe')
+        mock_run_coroutine_threadsafe = mocker.patch('bot.main.asyncio.run_coroutine_threadsafe')
 
         await on_stream_online(mock_stream_online_data)
 
-        channel.send.assert_called_once()
-        send_kwargs = channel.send.call_args.kwargs
-        assert 'embed' in send_kwargs
-        embed = send_kwargs['embed']
-        assert isinstance(embed, discord.Embed)
-        # assert embed.title == "Your Notification Subscriptions"
-        # assert "Streamer1" in embed.fields[0].value
-        # assert "Streamer2" in embed.fields[0].value
-        # channel.send.assert_any_call(embed=mocker.ANY)
-        channel.send.assert_any_call('@everyone')
+        mock_run_coroutine_threadsafe.assert_called_once()
+        send_messages_coroutine = mock_run_coroutine_threadsafe.call_args[0][0]
+        await send_messages_coroutine
+
+        mock_context.create_embed.assert_called_once_with(mock_stream_online_data, bot.user.name, bot.user.avatar)
+        mock_twitch_obj.get_users.assert_called_once_with(user_ids=[mock_stream_online_data.event.broadcaster_user_id])
+        channel.send.assert_has_calls([call(embed=mock_embed), call('@everyone')])
+        mock_run_coroutine_threadsafe.assert_called_once_with(mocker.ANY, bot.loop)
 
     async def test_on_stream_online_global_mode_without_mention_everyone_permission(self, mocker, test_session, bot,
                                                                                     mock_stream_online_data):
+        # Mock the random.choice function to always return a specific embed strategy
+        mock_embed_strategy = mocker.MagicMock(spec=DraftEmbedStrategy)
+        mocker.patch('bot.main.random.choice', return_value=mock_embed_strategy)
+
+        # Create a mock EmbedCreationContext that returns a mock embed
+        mock_embed = mocker.MagicMock(spec=discord.Embed)
+        mock_context = mocker.MagicMock(spec=EmbedCreationContext)
+        mock_context.create_embed.return_value = mock_embed
+        mocker.patch('bot.main.EmbedCreationContext', return_value=mock_context)
+
         guild = mocker.MagicMock(spec=discord.Guild)
         guild.id = 123
         guild.owner_id = 456
@@ -71,29 +107,64 @@ class TestOnStreamOnline:
 
         channel = mocker.MagicMock(spec=discord.TextChannel)
         channel.id = 789
+        channel.send = AsyncMock()
 
         bot.get_channel.return_value = channel
         bot.get_guild.return_value = guild
+        bot.loop = mocker.MagicMock()
 
         mocker.patch('bot.main.Session', return_value=test_session)
         mocker.patch('bot.main.bot', new=bot)
-        mocker.patch('bot.main.twitch_obj.get_users', new_callable=AsyncMock)
+
+        # Create a mock Twitch user with the profile_image_url attribute
+        mock_twitch_user = mocker.MagicMock()
+        mock_twitch_user.profile_image_url = "https://example.com/profile.png"
+
+        # Create an asynchronous generator that yields the mock Twitch user
+        async def mock_get_users(*args, **kwargs):
+            yield mock_twitch_user
+
+        mock_twitch_obj = mocker.MagicMock()
+        mock_twitch_obj.get_users.return_value = mock_get_users()
+        mocker.patch('bot.main.twitch_obj', new=mock_twitch_obj)
+
+        # Create a named tuple to mimic the structure of the rows returned by session.execute().all()
+        Row = namedtuple('Row', ['guild', 'user_id'])
+        guild_mock = mocker.MagicMock(spec=Guild)
+        guild_mock.guild_id = '123'
+        guild_mock.notification_channel_id = '789'
+        guild_mock.notification_mode = 'global'
+        guild_mock.is_censored = False
+        row = Row(guild=guild_mock, user_id='456')
 
         stmt = mocker.MagicMock()
-        test_session.execute.return_value.all.return_value = [
-            (guild, 456),
-        ]
+        test_session.execute = mocker.MagicMock()
+        test_session.execute.return_value.all.return_value = [row]
 
         mocker.patch('bot.main.select', return_value=stmt)
-        mocker.patch('bot.main.asyncio.run_coroutine_threadsafe')
+        mock_run_coroutine_threadsafe = mocker.patch('bot.main.asyncio.run_coroutine_threadsafe') 
 
         await on_stream_online(mock_stream_online_data)
+
+        mock_run_coroutine_threadsafe.assert_called_once()
+        send_messages_coroutine = mock_run_coroutine_threadsafe.call_args[0][0]
+        await send_messages_coroutine
 
         channel.send.assert_any_call(embed=mocker.ANY)
         channel.send.assert_any_call("The bot doesn't have permission to mention everyone. Mentioning here instead.")
         channel.send.assert_any_call('@here')
 
     async def test_on_stream_online_passive_mode(self, mocker, test_session, bot, mock_stream_online_data):
+        # Mock the random.choice function to always return a specific embed strategy
+        mock_embed_strategy = mocker.MagicMock(spec=DraftEmbedStrategy)
+        mocker.patch('bot.main.random.choice', return_value=mock_embed_strategy)
+
+        # Create a mock EmbedCreationContext that returns a mock embed
+        mock_embed = mocker.MagicMock(spec=discord.Embed)
+        mock_context = mocker.MagicMock(spec=EmbedCreationContext)
+        mock_context.create_embed.return_value = mock_embed
+        mocker.patch('bot.main.EmbedCreationContext', return_value=mock_context)
+
         guild = mocker.MagicMock(spec=discord.Guild)
         guild.id = 123
         guild.owner_id = 456
@@ -101,27 +172,62 @@ class TestOnStreamOnline:
 
         channel = mocker.MagicMock(spec=discord.TextChannel)
         channel.id = 789
+        channel.send = AsyncMock()
 
         bot.get_channel.return_value = channel
         bot.get_guild.return_value = guild
+        bot.loop = mocker.MagicMock()
 
         mocker.patch('bot.main.Session', return_value=test_session)
         mocker.patch('bot.main.bot', new=bot)
-        mocker.patch('bot.main.twitch_obj.get_users', new_callable=AsyncMock)
+
+        # Create a mock Twitch user with the profile_image_url attribute
+        mock_twitch_user = mocker.MagicMock()
+        mock_twitch_user.profile_image_url = "https://example.com/profile.png"
+
+        # Create an asynchronous generator that yields the mock Twitch user
+        async def mock_get_users(*args, **kwargs):
+            yield mock_twitch_user
+
+        mock_twitch_obj = mocker.MagicMock()
+        mock_twitch_obj.get_users.return_value = mock_get_users()
+        mocker.patch('bot.main.twitch_obj', new=mock_twitch_obj)
+
+        # Create a named tuple to mimic the structure of the rows returned by session.execute().all()
+        Row = namedtuple('Row', ['guild', 'user_id'])
+        guild_mock = mocker.MagicMock(spec=Guild)
+        guild_mock.guild_id = '123'
+        guild_mock.notification_channel_id = '789'
+        guild_mock.notification_mode = 'passive'
+        guild_mock.is_censored = False
+        row = Row(guild=guild_mock, user_id='456')
 
         stmt = mocker.MagicMock()
-        test_session.execute.return_value.all.return_value = [
-            (guild, 456),
-        ]
+        test_session.execute = mocker.MagicMock()
+        test_session.execute.return_value.all.return_value = [row]
 
         mocker.patch('bot.main.select', return_value=stmt)
-        mocker.patch('bot.main.asyncio.run_coroutine_threadsafe')
+        mock_run_coroutine_threadsafe = mocker.patch('bot.main.asyncio.run_coroutine_threadsafe') 
 
         await on_stream_online(mock_stream_online_data)
+
+        mock_run_coroutine_threadsafe.assert_called_once()
+        send_messages_coroutine = mock_run_coroutine_threadsafe.call_args[0][0]
+        await send_messages_coroutine
 
         channel.send.assert_called_once_with(embed=mocker.ANY)
 
     async def test_on_stream_online_optin_mode(self, mocker, test_session, bot, mock_stream_online_data):
+        # Mock the random.choice function to always return a specific embed strategy
+        mock_embed_strategy = mocker.MagicMock(spec=DraftEmbedStrategy)
+        mocker.patch('bot.main.random.choice', return_value=mock_embed_strategy)
+
+        # Create a mock EmbedCreationContext that returns a mock embed
+        mock_embed = mocker.MagicMock(spec=discord.Embed)
+        mock_context = mocker.MagicMock(spec=EmbedCreationContext)
+        mock_context.create_embed.return_value = mock_embed
+        mocker.patch('bot.main.EmbedCreationContext', return_value=mock_context)
+
         guild = mocker.MagicMock(spec=discord.Guild)
         guild.id = 123
         guild.owner_id = 456
@@ -129,15 +235,29 @@ class TestOnStreamOnline:
 
         channel = mocker.MagicMock(spec=discord.TextChannel)
         channel.id = 789
+        channel.send = AsyncMock()
 
         bot.get_channel.return_value = channel
         bot.get_guild.return_value = guild
+        bot.loop = mocker.MagicMock()
 
         mocker.patch('bot.main.Session', return_value=test_session)
         mocker.patch('bot.main.bot', new=bot)
-        mocker.patch('bot.main.twitch_obj.get_users', new_callable=AsyncMock)
+
+        # Create a mock Twitch user with the profile_image_url attribute
+        mock_twitch_user = mocker.MagicMock()
+        mock_twitch_user.profile_image_url = "https://example.com/profile.png"
+
+        # Create an asynchronous generator that yields the mock Twitch user
+        async def mock_get_users(*args, **kwargs):
+            yield mock_twitch_user
+
+        mock_twitch_obj = mocker.MagicMock()
+        mock_twitch_obj.get_users.return_value = mock_get_users()
+        mocker.patch('bot.main.twitch_obj', new=mock_twitch_obj)
 
         stmt = mocker.MagicMock()
+        test_session.execute = mocker.MagicMock()
         test_session.execute.return_value.all.return_value = [
             (guild, 123),
             (guild, 456),
@@ -145,9 +265,13 @@ class TestOnStreamOnline:
         ]
 
         mocker.patch('bot.main.select', return_value=stmt)
-        mocker.patch('bot.main.asyncio.run_coroutine_threadsafe')
+        mock_run_coroutine_threadsafe = mocker.patch('bot.main.asyncio.run_coroutine_threadsafe') 
 
         await on_stream_online(mock_stream_online_data)
+
+        mock_run_coroutine_threadsafe.assert_called_once()
+        send_messages_coroutine = mock_run_coroutine_threadsafe.call_args[0][0]
+        await send_messages_coroutine
 
         channel.send.assert_any_call(embed=mocker.ANY)
         channel.send.assert_any_call("<@123> <@456> <@789>")
@@ -160,26 +284,45 @@ class TestOnStreamOnline:
 
         channel = mocker.MagicMock(spec=discord.TextChannel)
         channel.id = 789
+        channel.send = AsyncMock()
 
         bot.get_channel.return_value = channel
         bot.get_guild.return_value = guild
+        bot.loop = mocker.MagicMock()
 
         mocker.patch('bot.main.Session', return_value=test_session)
         mocker.patch('bot.main.bot', new=bot)
 
-        twitch_user = mocker.MagicMock()
-        twitch_user.profile_image_url = "twitch_user_profile_image_url"
-        mocker.patch('bot.main.twitch_obj.get_users', new_callable=AsyncMock, return_value=[twitch_user])
+        # twitch_user = mocker.MagicMock()
+        # twitch_user.profile_image_url = "twitch_user_profile_image_url"
+        # mocker.patch('bot.main.twitch_obj.get_users', new_callable=AsyncMock, return_value=[twitch_user])
+
+        # Create a mock Twitch user with the profile_image_url attribute
+        mock_twitch_user = mocker.MagicMock()
+        mock_twitch_user.profile_image_url = "https://example.com/profile.png"
+
+        # Create an asynchronous generator that yields the mock Twitch user
+        async def mock_get_users(*args, **kwargs):
+            yield mock_twitch_user
+
+        mock_twitch_obj = mocker.MagicMock()
+        mock_twitch_obj.get_users.return_value = mock_get_users()
+        mocker.patch('bot.main.twitch_obj', new=mock_twitch_obj)
 
         stmt = mocker.MagicMock()
+        test_session.execute = mocker.MagicMock()
         test_session.execute.return_value.all.return_value = [
             (guild, 123),
         ]
 
         mocker.patch('bot.main.select', return_value=stmt)
-        mocker.patch('bot.main.asyncio.run_coroutine_threadsafe')
+        mock_run_coroutine_threadsafe = mocker.patch('bot.main.asyncio.run_coroutine_threadsafe') 
 
         await on_stream_online(mock_stream_online_data)
+
+        mock_run_coroutine_threadsafe.assert_called_once()
+        send_messages_coroutine = mock_run_coroutine_threadsafe.call_args[0][0]
+        await send_messages_coroutine
 
         channel.send.assert_called_once_with(embed=mocker.ANY)
 
@@ -189,24 +332,34 @@ class TestOnStreamOnline:
         guild.owner_id = 456
         guild.icon.url = "https://example.com/icon.png"
 
+        channel = mocker.MagicMock(spec=discord.TextChannel)
+        channel.send = AsyncMock()
+
         bot.get_channel.return_value = None
         bot.get_guild.return_value = guild
+        bot.loop = mocker.MagicMock()
 
         mocker.patch('bot.main.Session', return_value=test_session)
         mocker.patch('bot.main.bot', new=bot)
         mocker.patch('bot.main.twitch_obj.get_users', new_callable=AsyncMock)
 
         stmt = mocker.MagicMock()
+        test_session.execute = mocker.MagicMock()
         test_session.execute.return_value.all.return_value = [
             (guild, 456),
         ]
 
         mocker.patch('bot.main.select', return_value=stmt)
-        mocker.patch('bot.main.asyncio.run_coroutine_threadsafe')
+        mock_run_coroutine_threadsafe = mocker.patch('bot.main.asyncio.run_coroutine_threadsafe') 
 
         await on_stream_online(mock_stream_online_data)
 
+        mock_run_coroutine_threadsafe.assert_called_once()
+        send_messages_coroutine = mock_run_coroutine_threadsafe.call_args[0][0]
+        await send_messages_coroutine
+
         bot.get_channel.assert_called_once()
+        channel.send.assert_not_called()
 
     async def test_on_stream_online_global_mode_owner_not_subscribed(self, mocker, test_session, bot,
                                                                      mock_stream_online_data):
@@ -216,24 +369,41 @@ class TestOnStreamOnline:
         guild.icon.url = "https://example.com/icon.png"
 
         channel = mocker.MagicMock(spec=discord.TextChannel)
-        channel.id = 789
+        channel.send = AsyncMock()
 
         bot.get_channel.return_value = channel
         bot.get_guild.return_value = guild
+        bot.loop = mocker.MagicMock()
 
         mocker.patch('bot.main.Session', return_value=test_session)
         mocker.patch('bot.main.bot', new=bot)
-        mocker.patch('bot.main.twitch_obj.get_users', new_callable=AsyncMock)
+
+        # Create a mock Twitch user with the profile_image_url attribute
+        mock_twitch_user = mocker.MagicMock()
+        mock_twitch_user.profile_image_url = "https://example.com/profile.png"
+
+        # Create an asynchronous generator that yields the mock Twitch user
+        async def mock_get_users(*args, **kwargs):
+            yield mock_twitch_user
+
+        mock_twitch_obj = mocker.MagicMock()
+        mock_twitch_obj.get_users.return_value = mock_get_users()
+        mocker.patch('bot.main.twitch_obj', new=mock_twitch_obj)
 
         stmt = mocker.MagicMock()
+        test_session.execute = mocker.MagicMock()
         test_session.execute.return_value.all.return_value = [
             (guild, 123),
         ]
 
         mocker.patch('bot.main.select', return_value=stmt)
-        mocker.patch('bot.main.asyncio.run_coroutine_threadsafe')
+        mock_run_coroutine_threadsafe = mocker.patch('bot.main.asyncio.run_coroutine_threadsafe') 
 
         await on_stream_online(mock_stream_online_data)
+
+        mock_run_coroutine_threadsafe.assert_called_once()
+        send_messages_coroutine = mock_run_coroutine_threadsafe.call_args[0][0]
+        await send_messages_coroutine
 
         channel.send.assert_not_called()
 
@@ -245,25 +415,87 @@ class TestOnStreamOnline:
         guild.icon.url = "https://example.com/icon.png"
 
         channel = mocker.MagicMock(spec=discord.TextChannel)
-        channel.id = 789
+        channel.send = AsyncMock()
 
         bot.get_channel.return_value = channel
         bot.get_guild.return_value = guild
+        bot.loop = mocker.MagicMock()
 
         mocker.patch('bot.main.Session', return_value=test_session)
         mocker.patch('bot.main.bot', new=bot)
-        mocker.patch('bot.main.twitch_obj.get_users', new_callable=AsyncMock)
+
+        # Create a mock Twitch user with the profile_image_url attribute
+        mock_twitch_user = mocker.MagicMock()
+        mock_twitch_user.profile_image_url = "https://example.com/profile.png"
+
+        # Create an asynchronous generator that yields the mock Twitch user
+        async def mock_get_users(*args, **kwargs):
+            yield mock_twitch_user
+
+        mock_twitch_obj = mocker.MagicMock()
+        mock_twitch_obj.get_users.return_value = mock_get_users()
+        mocker.patch('bot.main.twitch_obj', new=mock_twitch_obj)
 
         stmt = mocker.MagicMock()
+        test_session.execute = mocker.MagicMock()
         test_session.execute.return_value.all.return_value = [
             (guild, 123),
         ]
 
         mocker.patch('bot.main.select', return_value=stmt)
-        mocker.patch('bot.main.asyncio.run_coroutine_threadsafe')
+        mock_run_coroutine_threadsafe = mocker.patch('bot.main.asyncio.run_coroutine_threadsafe') 
 
         await on_stream_online(mock_stream_online_data)
 
+        mock_run_coroutine_threadsafe.assert_called_once()
+        send_messages_coroutine = mock_run_coroutine_threadsafe.call_args[0][0]
+        await send_messages_coroutine
+
+        channel.send.assert_not_called()
+
+    async def test_on_stream_online_no_subscriptions(self, mocker, test_session, bot, mock_stream_online_data):
+        # Mock the random.choice function to always return a specific embed strategy
+        mock_embed_strategy = mocker.MagicMock(spec=DraftEmbedStrategy)
+        mocker.patch('bot.main.random.choice', return_value=mock_embed_strategy)
+
+        # Create a mock EmbedCreationContext that returns a mock embed
+        mock_embed = mocker.MagicMock(spec=discord.Embed)
+        mock_context = mocker.MagicMock(spec=EmbedCreationContext)
+        mock_context.create_embed.return_value = mock_embed
+        mocker.patch('bot.main.EmbedCreationContext', return_value=mock_context)
+
+        guild = mocker.MagicMock(spec=discord.Guild)
+        guild.id = 123
+        guild.owner_id = 456
+        guild.me.guild_permissions.mention_everyone = True
+        guild.icon.url = "https://example.com/icon.png"
+
+        channel = mocker.MagicMock(spec=discord.TextChannel)
+        channel.id = 789
+        channel.send = AsyncMock()
+
+        bot.get_channel.return_value = channel
+        bot.get_guild.return_value = guild
+        bot.loop = mocker.MagicMock()
+
+        mocker.patch('bot.main.Session', return_value=test_session)
+        mocker.patch('bot.main.bot', new=bot)
+
+        # Create an empty list to simulate no subscriptions found
+        test_session.execute = mocker.MagicMock()
+        test_session.execute.return_value.all.return_value = []
+
+        stmt = mocker.MagicMock()
+        mocker.patch('bot.main.select', return_value=stmt)
+        mock_run_coroutine_threadsafe = mock_run_coroutine_threadsafe = mocker.patch('bot.main.asyncio.run_coroutine_threadsafe') 
+
+        await on_stream_online(mock_stream_online_data)
+
+        mock_run_coroutine_threadsafe.assert_called_once()
+        send_messages_coroutine = mock_run_coroutine_threadsafe.call_args[0][0]
+        await send_messages_coroutine
+
+        # Assert that no messages are sent when no subscriptions are found
         channel.send.assert_not_called()
 
 

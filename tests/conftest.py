@@ -83,6 +83,7 @@ def mock_stream_online_data(mocker):
     mock_data = mocker.Mock(spec=StreamOnlineEvent)
     mock_data.event = mocker.Mock(spec=StreamOnlineData)
     mock_data.event.broadcaster_user_name = "test_user"
+    mock_data.event.broadcaster_user_id = 123
     mock_data.event.broadcaster_user_login = "test_user_login"
     mock_data.event.started_at = "2022-01-01 12:00:00"
     return mock_data
