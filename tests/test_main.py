@@ -150,7 +150,7 @@ class TestOnStreamOnline:
         send_messages_coroutine = mock_run_coroutine_threadsafe.call_args[0][0]
         await send_messages_coroutine
 
-        channel.send.assert_any_call(embed=mocker.ANY)
+        channel.send.assert_any_call(embed=mock_embed)
         channel.send.assert_any_call("The bot doesn't have permission to mention everyone. Mentioning here instead.")
         channel.send.assert_any_call('@here')
 
@@ -215,7 +215,7 @@ class TestOnStreamOnline:
         send_messages_coroutine = mock_run_coroutine_threadsafe.call_args[0][0]
         await send_messages_coroutine
 
-        channel.send.assert_called_once_with(embed=mocker.ANY)
+        channel.send.assert_called_once_with(embed=mock_embed)
 
     async def test_on_stream_online_optin_mode(self, mocker, test_session, bot, mock_stream_online_data):
         # Mock the random.choice function to always return a specific embed strategy
@@ -256,13 +256,20 @@ class TestOnStreamOnline:
         mock_twitch_obj.get_users.return_value = mock_get_users()
         mocker.patch('bot.main.twitch_obj', new=mock_twitch_obj)
 
+        # Create a named tuple to mimic the structure of the rows returned by session.execute().all()
+        Row = namedtuple('Row', ['guild', 'user_id'])
+        guild_mock = mocker.MagicMock(spec=Guild)
+        guild_mock.guild_id = '123'
+        guild_mock.notification_channel_id = '789'
+        guild_mock.notification_mode = 'optin'
+        guild_mock.is_censored = False
+        row1 = Row(guild=guild_mock, user_id='123')
+        row2 = Row(guild=guild_mock, user_id='456')
+        row3 = Row(guild=guild_mock, user_id='789')
+
         stmt = mocker.MagicMock()
         test_session.execute = mocker.MagicMock()
-        test_session.execute.return_value.all.return_value = [
-            (guild, 123),
-            (guild, 456),
-            (guild, 789),
-        ]
+        test_session.execute.return_value.all.return_value = [row1, row2, row3]
 
         mocker.patch('bot.main.select', return_value=stmt)
         mock_run_coroutine_threadsafe = mocker.patch('bot.main.asyncio.run_coroutine_threadsafe') 
@@ -273,10 +280,26 @@ class TestOnStreamOnline:
         send_messages_coroutine = mock_run_coroutine_threadsafe.call_args[0][0]
         await send_messages_coroutine
 
-        channel.send.assert_any_call(embed=mocker.ANY)
-        channel.send.assert_any_call("<@123> <@456> <@789>")
+        channel.send.assert_any_call(embed=mock_embed)
+        # Assert that each user mention is present in the sent message
+        user_mentions = ["<@123>", "<@456>", "<@789>"]
+        sent_message = channel.send.call_args_list[-1][0][0]  # Get the last sent message
+        for mention in user_mentions:
+            assert mention in sent_message
 
-    async def test_on_stream_online_censored_mode(self, mocker, test_session, bot, mock_stream_online_data):
+    async def test_on_stream_online_censored_mode_optin(self, mocker, test_session, bot, mock_stream_online_data):
+        # Mock the random.choice function to always return a specific embed strategy
+        mock_embed_strategy = mocker.MagicMock(spec=DraftEmbedStrategy)
+        mocker.patch('bot.main.random.choice', return_value=mock_embed_strategy)
+
+        # Create a mock EmbedCreationContext that returns a mock embed
+        mock_nfsw_embed = mocker.MagicMock(spec=discord.Embed)
+        mock_sfw_embed = mocker.MagicMock(spec=discord.Embed)
+        mock_context = mocker.MagicMock(spec=EmbedCreationContext)
+        mock_context.create_embed.return_value = mock_nfsw_embed
+        mock_context.create_embed_custom_images.return_value = mock_sfw_embed
+        mocker.patch('bot.main.EmbedCreationContext', return_value=mock_context)
+
         guild = mocker.MagicMock(spec=discord.Guild)
         guild.id = 123
         guild.owner_id = 456
@@ -293,9 +316,78 @@ class TestOnStreamOnline:
         mocker.patch('bot.main.Session', return_value=test_session)
         mocker.patch('bot.main.bot', new=bot)
 
-        # twitch_user = mocker.MagicMock()
-        # twitch_user.profile_image_url = "twitch_user_profile_image_url"
-        # mocker.patch('bot.main.twitch_obj.get_users', new_callable=AsyncMock, return_value=[twitch_user])
+        # Create a mock Twitch user with the profile_image_url attribute
+        mock_twitch_user = mocker.MagicMock()
+        mock_twitch_user.profile_image_url = "https://example.com/profile.png"
+
+        # Create an asynchronous generator that yields the mock Twitch user
+        async def mock_get_users(*args, **kwargs):
+            yield mock_twitch_user
+
+        mock_twitch_obj = mocker.MagicMock()
+        mock_twitch_obj.get_users.return_value = mock_get_users()
+        mocker.patch('bot.main.twitch_obj', new=mock_twitch_obj)
+
+        # Create a named tuple to mimic the structure of the rows returned by session.execute().all()
+        Row = namedtuple('Row', ['guild', 'user_id'])
+        guild_mock = mocker.MagicMock(spec=Guild)
+        guild_mock.guild_id = '123'
+        guild_mock.notification_channel_id = '789'
+        guild_mock.notification_mode = 'optin'
+        guild_mock.is_censored = True
+        row1 = Row(guild=guild_mock, user_id='123')
+        row2 = Row(guild=guild_mock, user_id='456')
+        row3 = Row(guild=guild_mock, user_id='789')
+
+        stmt = mocker.MagicMock()
+        test_session.execute = mocker.MagicMock()
+        test_session.execute.return_value.all.return_value = [row1, row2, row3]
+
+        mocker.patch('bot.main.select', return_value=stmt)
+        mock_run_coroutine_threadsafe = mocker.patch('bot.main.asyncio.run_coroutine_threadsafe') 
+
+        await on_stream_online(mock_stream_online_data)
+
+        mock_run_coroutine_threadsafe.assert_called_once()
+        send_messages_coroutine = mock_run_coroutine_threadsafe.call_args[0][0]
+        await send_messages_coroutine
+
+        assert call(embed=mock_sfw_embed) in channel.send.mock_calls
+        assert call(embed=mock_nfsw_embed) not in channel.send.mock_calls
+        # Assert that each user mention is present in the sent message
+        user_mentions = ["<@123>", "<@456>", "<@789>"]
+        sent_message = channel.send.call_args_list[-1][0][0]  # Get the last sent message
+        for mention in user_mentions:
+            assert mention in sent_message
+
+    async def test_on_stream_online_censored_mode_passive(self, mocker, test_session, bot, mock_stream_online_data):
+        # Mock the random.choice function to always return a specific embed strategy
+        mock_embed_strategy = mocker.MagicMock(spec=DraftEmbedStrategy)
+        mocker.patch('bot.main.random.choice', return_value=mock_embed_strategy)
+
+        # Create a mock EmbedCreationContext that returns a mock embed
+        mock_nfsw_embed = mocker.MagicMock(spec=discord.Embed)
+        mock_sfw_embed = mocker.MagicMock(spec=discord.Embed)
+        mock_context = mocker.MagicMock(spec=EmbedCreationContext)
+        mock_context.create_embed.return_value = mock_nfsw_embed
+        mock_context.create_embed_custom_images.return_value = mock_sfw_embed
+        mocker.patch('bot.main.EmbedCreationContext', return_value=mock_context)
+
+        guild = mocker.MagicMock(spec=discord.Guild)
+        guild.id = 123
+        guild.owner_id = 456
+        guild.icon.url = "https://example.com/icon.png"
+
+        channel = mocker.MagicMock(spec=discord.TextChannel)
+        channel.id = 789
+        channel.send = AsyncMock()
+
+        bot.get_channel.return_value = channel
+        bot.get_guild.return_value = guild
+        bot.loop = mocker.MagicMock()
+
+        mocker.patch('bot.main.Session', return_value=test_session)
+        mocker.patch('bot.main.bot', new=bot)
 
         # Create a mock Twitch user with the profile_image_url attribute
         mock_twitch_user = mocker.MagicMock()
@@ -309,14 +401,22 @@ class TestOnStreamOnline:
         mock_twitch_obj.get_users.return_value = mock_get_users()
         mocker.patch('bot.main.twitch_obj', new=mock_twitch_obj)
 
+        # Create a named tuple to mimic the structure of the rows returned by session.execute().all()
+        Row = namedtuple('Row', ['guild', 'user_id'])
+        guild_mock = mocker.MagicMock(spec=Guild)
+        guild_mock.guild_id = '123'
+        guild_mock.notification_channel_id = '789'
+        guild_mock.notification_mode = 'passive'
+        guild_mock.is_censored = True
+        row1 = Row(guild=guild_mock, user_id='123')
+        row2 = Row(guild=guild_mock, user_id='456')
+
         stmt = mocker.MagicMock()
         test_session.execute = mocker.MagicMock()
-        test_session.execute.return_value.all.return_value = [
-            (guild, 123),
-        ]
+        test_session.execute.return_value.all.return_value = [row1, row2]
 
         mocker.patch('bot.main.select', return_value=stmt)
-        mock_run_coroutine_threadsafe = mocker.patch('bot.main.asyncio.run_coroutine_threadsafe') 
+        mock_run_coroutine_threadsafe = mocker.patch('bot.main.asyncio.run_coroutine_threadsafe')
 
         await on_stream_online(mock_stream_online_data)
 
@@ -324,7 +424,8 @@ class TestOnStreamOnline:
         send_messages_coroutine = mock_run_coroutine_threadsafe.call_args[0][0]
         await send_messages_coroutine
 
-        channel.send.assert_called_once_with(embed=mocker.ANY)
+        channel.send.assert_called_once_with(embed=mock_sfw_embed)
+        assert call(embed=mock_nfsw_embed) not in channel.send.mock_calls
 
     async def test_on_stream_online_channel_not_found(self, mocker, test_session, bot, mock_stream_online_data):
         guild = mocker.MagicMock(spec=discord.Guild)
@@ -341,13 +442,19 @@ class TestOnStreamOnline:
 
         mocker.patch('bot.main.Session', return_value=test_session)
         mocker.patch('bot.main.bot', new=bot)
-        mocker.patch('bot.main.twitch_obj.get_users', new_callable=AsyncMock)
+
+        # Create a named tuple to mimic the structure of the rows returned by session.execute().all()
+        Row = namedtuple('Row', ['guild', 'user_id'])
+        guild_mock = mocker.MagicMock(spec=Guild)
+        guild_mock.guild_id = '123'
+        guild_mock.notification_channel_id = '789'
+        guild_mock.notification_mode = 'global'
+        guild_mock.is_censored = False
+        row = Row(guild=guild_mock, user_id='456')
 
         stmt = mocker.MagicMock()
         test_session.execute = mocker.MagicMock()
-        test_session.execute.return_value.all.return_value = [
-            (guild, 456),
-        ]
+        test_session.execute.return_value.all.return_value = [row]
 
         mocker.patch('bot.main.select', return_value=stmt)
         mock_run_coroutine_threadsafe = mocker.patch('bot.main.asyncio.run_coroutine_threadsafe') 
@@ -390,11 +497,18 @@ class TestOnStreamOnline:
         mock_twitch_obj.get_users.return_value = mock_get_users()
         mocker.patch('bot.main.twitch_obj', new=mock_twitch_obj)
 
+        # Create a named tuple to mimic the structure of the rows returned by session.execute().all()
+        Row = namedtuple('Row', ['guild', 'user_id'])
+        guild_mock = mocker.MagicMock(spec=Guild)
+        guild_mock.guild_id = '123'
+        guild_mock.notification_channel_id = '789'
+        guild_mock.notification_mode = 'global'
+        guild_mock.is_censored = False
+        row = Row(guild=guild_mock, user_id='123')
+
         stmt = mocker.MagicMock()
         test_session.execute = mocker.MagicMock()
-        test_session.execute.return_value.all.return_value = [
-            (guild, 123),
-        ]
+        test_session.execute.return_value.all.return_value = [row]
 
         mocker.patch('bot.main.select', return_value=stmt)
         mock_run_coroutine_threadsafe = mocker.patch('bot.main.asyncio.run_coroutine_threadsafe') 
@@ -436,11 +550,18 @@ class TestOnStreamOnline:
         mock_twitch_obj.get_users.return_value = mock_get_users()
         mocker.patch('bot.main.twitch_obj', new=mock_twitch_obj)
 
+        # Create a named tuple to mimic the structure of the rows returned by session.execute().all()
+        Row = namedtuple('Row', ['guild', 'user_id'])
+        guild_mock = mocker.MagicMock(spec=Guild)
+        guild_mock.guild_id = '123'
+        guild_mock.notification_channel_id = '789'
+        guild_mock.notification_mode = 'global'
+        guild_mock.is_censored = False
+        row = Row(guild=guild_mock, user_id='123')
+
         stmt = mocker.MagicMock()
         test_session.execute = mocker.MagicMock()
-        test_session.execute.return_value.all.return_value = [
-            (guild, 123),
-        ]
+        test_session.execute.return_value.all.return_value = [row]
 
         mocker.patch('bot.main.select', return_value=stmt)
         mock_run_coroutine_threadsafe = mocker.patch('bot.main.asyncio.run_coroutine_threadsafe') 
