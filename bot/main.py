@@ -526,20 +526,22 @@ async def changeconfig_error(ctx, error):
     )
 
 
-@bot.hybrid_command(name='test', description='for testing code when executed')
-async def test(ctx):
-    test_data = StreamOnlineEvent()
-    test_data.event = StreamOnlineData()
-    test_data.event.broadcaster_user_name = "Test"
-    test_data.event.started_at = "2021-02-02"
-    test_data.event.broadcaster_user_login = "test"
-    embed_strategies = [
-        PrigozhinEmbedStrategy()
-    ]
-    selected_embed_strategy = random.choice(embed_strategies)
-    context = EmbedCreationContext(selected_embed_strategy)
-    embed = context.create_embed(test_data, bot.user.name, bot.user.avatar)
-    await ctx.send(embed=embed)
+# @bot.hybrid_command(name='test', description='for testing code when executed')
+# async def test(ctx):
+#     test_data = StreamOnlineEvent()
+#     test_data.event = StreamOnlineData()
+#     test_data.event.broadcaster_user_name = "Test"
+#     test_data.event.started_at = "2021-02-02"
+#     test_data.event.broadcaster_user_login = "test"
+#     embed_strategies = [
+#         DraftEmbedStrategy(),
+#         IsisEmbedStrategy(),
+#         PrigozhinEmbedStrategy()
+#     ]
+#     selected_embed_strategy = random.choice(embed_strategies)
+#     context = EmbedCreationContext(selected_embed_strategy)
+#     embed = context.create_embed(test_data, bot.user.name, bot.user.avatar)
+#     await ctx.send(embed=embed)
 
 
 @bot.event

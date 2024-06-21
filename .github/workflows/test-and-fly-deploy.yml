@@ -18,6 +18,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       - name: Run tests
+        env:
+          FLY_APP_NAME: ${{ secrets.FLY_APP_NAME }}
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
+          POSTGRESQL_URL: ${{ secrets.POSTGRESQL_URL }}
+          POSTGRESQL_TEST_URL: ${{ secrets.POSTGRESQL_TEST_URL }}
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
         run: |
           pytest tests/test_*.py
   deploy:
